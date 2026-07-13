@@ -1,0 +1,14 @@
+# Mixed plaintext + CloudTrail JSON auth log (demonstrates both parser paths)
+2026-06-01T08:14:02Z ConsoleLogin user=alice ip=198.51.100.20 result=success
+2026-06-01T08:20:41Z ConsoleLogin user=intern ip=203.0.113.9 result=failure
+2026-06-01T08:21:03Z ConsoleLogin user=intern ip=203.0.113.9 result=failure
+2026-06-01T08:21:29Z ConsoleLogin user=intern ip=203.0.113.9 result=failure
+2026-06-01T08:22:10Z ConsoleLogin user=intern ip=203.0.113.9 result=failure
+2026-06-01T08:22:55Z ConsoleLogin user=intern ip=203.0.113.9 result=failure
+2026-06-01T08:23:40Z ConsoleLogin user=intern ip=203.0.113.9 result=failure
+2026-06-02T11:02:00Z ConsoleLogin user=bob ip=198.51.100.7 result=success
+2026-06-03T02:11:44Z ConsoleLogin user=ci-deploy ip=10.0.0.42 result=success
+{"eventTime":"2026-06-04T14:05:00Z","eventName":"AssumeRole","eventSource":"sts.amazonaws.com","sourceIPAddress":"10.0.0.42","userIdentity":{"userName":"ci-deploy"}}
+{"eventTime":"2026-06-05T09:30:12Z","eventName":"CreateUser","eventSource":"iam.amazonaws.com","sourceIPAddress":"203.0.113.9","userIdentity":{"userName":"intern"},"errorCode":"AccessDenied"}
+{"eventTime":"2026-06-06T16:44:00Z","eventName":"GetObject","eventSource":"s3.amazonaws.com","sourceIPAddress":"198.51.100.20","userIdentity":{"userName":"alice"}}
+{"eventTime":"2026-06-30T10:00:00Z","eventName":"ConsoleLogin","eventSource":"signin.amazonaws.com","sourceIPAddress":"198.51.100.7","userIdentity":{"userName":"bob"},"responseElements":{"ConsoleLogin":"Success"}}

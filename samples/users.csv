@@ -1,0 +1,8 @@
+username,email,role,mfa_enabled,last_login,password_last_changed,access_key_age_days,account_type,active,console_access,policies
+intern,intern@acme.example,intern,false,2026-06-20T09:00:00Z,2026-01-02T00:00:00Z,410,human,true,true,InternEscalation
+alice,alice@acme.example,engineer,true,2026-07-10T12:00:00Z,2026-05-01T00:00:00Z,30,human,true,true,ReadOnlyS3
+bob,bob@acme.example,admin,true,2026-07-11T08:30:00Z,2026-06-15T00:00:00Z,45,human,true,true,AdminAccess
+carol,carol@acme.example,analyst,false,2026-02-01T00:00:00Z,2025-09-01T00:00:00Z,120,human,true,true,ReadOnlyS3
+ci-deploy,ci@acme.example,service,false,,,200,service,true,true,DeployPipeline
+dormant,dormant@acme.example,contractor,false,,,,human,true,false,
+svc-metrics,metrics@acme.example,service,false,,,15,service,true,false,ReadOnlyS3
