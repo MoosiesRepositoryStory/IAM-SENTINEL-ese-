@@ -80,6 +80,11 @@
   {% include "partials/findings_table.html" %}
 </div>
 
+<!-- Detail drawer mounts here. On a deep link (/findings/<id>) it auto-loads. -->
+<div id="drawer"
+     {% if open_group %}hx-get="{{ url_for('web.finding_drawer', group_id=open_group) }}"
+     hx-trigger="load" hx-target="#drawer" hx-swap="innerHTML"{% endif %}></div>
+
 <script>
   // Sorting: header buttons mutate #sortField then fire a custom event the form
   // listens for. Shift-click appends to a multi-column sort; plain click replaces.
@@ -113,5 +118,18 @@
     field.value = COLUMN_ORDER.filter(k => set.has(k)).join(',');
     field.dispatchEvent(new Event('change', { bubbles: true }));
   }
+
+  // ---- Detail drawer (plain JS so it survives htmx-injected content) ----
+  function closeDrawer() { document.getElementById('drawer').innerHTML = ''; }
+  function drawerTab(btn, name) {
+    const panel = btn.closest('.drawer-panel');
+    panel.querySelectorAll('.drawer-tab').forEach(t => t.classList.toggle('on', t === btn));
+    panel.querySelectorAll('[data-tab]').forEach(p => {
+      p.style.display = p.dataset.tab === name ? '' : 'none';
+    });
+  }
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && document.getElementById('drawer').innerHTML.trim()) closeDrawer();
+  });
 </script>
 {% endblock %}

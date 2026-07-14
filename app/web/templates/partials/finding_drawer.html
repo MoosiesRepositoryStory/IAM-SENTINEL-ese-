@@ -1,0 +1,149 @@
+{# Finding detail drawer (§8.8). Injected into #drawer by htmx. Plain-JS tabs +
+   close (see findings.html) so it works as htmx-swapped content. #}
+
+{% if oob_status %}
+<td id="row-status-{{ d.group.id }}" hx-swap-oob="true">
+  <span class="status st-{{ d.group.current_status }}">{{ d.group.current_status | replace('_', ' ') }}</span>
+</td>
+{% endif %}
+
+{% set f = d.finding %}
+{% set sev_class = {'CRITICAL': 'r-crit', 'HIGH': 'r-high', 'MEDIUM': 'r-med', 'LOW': 'r-low'} %}
+
+<div class="drawer-backdrop" onclick="closeDrawer()"></div>
+<aside class="drawer-panel" role="dialog" aria-label="Finding detail">
+  <header class="drawer-head">
+    <div class="drawer-head-top">
+      <span class="risk {{ sev_class.get(f.severity, 'r-low') }}">{{ f.risk_score }}</span>
+      <span class="pill sev-{{ f.severity }}"><span class="dot"></span>{{ f.severity | capitalize }}</span>
+      <span class="status st-{{ d.group.current_status }}" id="drawer-status">
+        {{ status_labels.get(d.group.current_status, d.group.current_status) }}
+      </span>
+      <button class="icon-btn drawer-close" onclick="closeDrawer()" aria-label="Close">✕</button>
+    </div>
+    <h2 class="drawer-title">{{ f.title }}</h2>
+    <div class="drawer-sub">
+      <span class="mono">{{ f.principal_uid or '—' }}</span>
+      <span class="dot-sep">·</span>
+      <span style="text-transform:capitalize">{{ f.category }}</span>
+      <span class="dot-sep">·</span>
+      <span class="mono">{{ f.check_id }}</span>
+    </div>
+  </header>
+
+  {% if error %}
+  <div class="drawer-error">⚠ {{ error }}</div>
+  {% endif %}
+
+  <nav class="drawer-tabs">
+    <button class="drawer-tab on" onclick="drawerTab(this, 'overview')">Overview</button>
+    <button class="drawer-tab" onclick="drawerTab(this, 'evidence')">Evidence</button>
+    <button class="drawer-tab" onclick="drawerTab(this, 'remediation')">Remediation</button>
+    <button class="drawer-tab" onclick="drawerTab(this, 'activity')">
+      Activity <span class="tab-count">{{ d.history | length }}</span>
+    </button>
+  </nav>
+
+  <div class="drawer-body">
+    <!-- Overview -->
+    <section data-tab="overview">
+      <dl class="meta-grid">
+        <dt>Status</dt><dd>{{ status_labels.get(d.group.current_status, d.group.current_status) }}</dd>
+        <dt>Risk score</dt><dd>{{ f.risk_score }}/100</dd>
+        <dt>Severity</dt><dd>{{ f.severity | capitalize }}</dd>
+        <dt>Likelihood</dt><dd>{{ f.likelihood if f.likelihood is not none else '—' }}</dd>
+        <dt>Impact</dt><dd>{{ f.impact if f.impact is not none else '—' }}</dd>
+        <dt>Principal</dt><dd class="mono">{{ f.principal_uid or '—' }}</dd>
+        <dt>Resource</dt><dd class="mono">{{ f.resource or '—' }}</dd>
+        <dt>First seen</dt><dd>{{ d.first_seen or '—' }}</dd>
+        <dt>Last seen</dt><dd>{{ d.last_seen or '—' }}</dd>
+        <dt>Age</dt><dd>{{ d.age_days ~ ' day' ~ ('' if d.age_days == 1 else 's') if d.age_days is not none else '—' }}</dd>
+        <dt>Compliance</dt>
+        <dd>
+          {% set tags = f.compliance_tags %}
+          {% if tags %}
+            {% if tags is mapping %}{% for k in tags.keys() | list %}<span class="tag">{{ k }}</span> {% endfor %}
+            {% else %}{% for t in tags %}<span class="tag">{{ t }}</span> {% endfor %}{% endif %}
+          {% else %}—{% endif %}
+        </dd>
+      </dl>
+    </section>
+
+    <!-- Evidence -->
+    <section data-tab="evidence" style="display:none">
+      {% if f.evidence %}
+        {% for key, val in f.evidence.items() %}
+        <div class="ev-block">
+          <div class="ev-key">{{ key | replace('_', ' ') }}</div>
+          {% if val is string or val is number or val is boolean %}
+            <div class="ev-val mono">{{ val }}</div>
+          {% elif val is sequence %}
+            <pre class="code">{% for item in val %}{{ item if item is string else (item | tojson) }}
+{% endfor %}</pre>
+          {% else %}
+            <pre class="code">{{ val | tojson(indent=2) }}</pre>
+          {% endif %}
+        </div>
+        {% endfor %}
+      {% else %}
+        <p class="muted">No structured evidence recorded for this finding.</p>
+      {% endif %}
+    </section>
+
+    <!-- Remediation -->
+    <section data-tab="remediation" style="display:none">
+      {% if f.recommendation %}<p class="reco">{{ f.recommendation }}</p>{% endif %}
+      {% if f.remediation_snippet %}
+      <div class="snippet">
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.nextElementSibling.innerText); this.textContent='Copied'">Copy</button>
+        <pre class="code">{{ f.remediation_snippet }}</pre>
+      </div>
+      {% else %}
+      <p class="muted">No remediation snippet for this check.</p>
+      {% endif %}
+    </section>
+
+    <!-- Activity / audit trail -->
+    <section data-tab="activity" style="display:none">
+      <ol class="timeline">
+        {% for e in d.history | reverse %}
+        <li class="tl-item">
+          <span class="tl-dot st-{{ e.to_status }}"></span>
+          <div class="tl-body">
+            <div class="tl-line">
+              {% if e.from_status is none %}
+                <b>Detected</b> as {{ status_labels.get(e.to_status, e.to_status) }}
+              {% else %}
+                <b>{{ e.actor_name }}</b> changed status
+                <span class="status st-{{ e.from_status }} inline">{{ status_labels.get(e.from_status, e.from_status) }}</span>
+                →
+                <span class="status st-{{ e.to_status }} inline">{{ status_labels.get(e.to_status, e.to_status) }}</span>
+              {% endif %}
+            </div>
+            {% if e.note %}<div class="tl-note">“{{ e.note }}”</div>{% endif %}
+            <time class="tl-time">{{ e.at | replace('T', ' ') | truncate(19, true, '') }}</time>
+          </div>
+        </li>
+        {% endfor %}
+      </ol>
+    </section>
+  </div>
+
+  <footer class="drawer-foot">
+    {% if d.actions %}
+    <textarea id="note-{{ d.group.id }}" name="note" class="note-input"
+              placeholder="Add an optional note for the audit trail…" rows="1"></textarea>
+    <div class="foot-actions">
+      {% for to_status, label in d.actions %}
+      <button class="btn {{ 'primary' if loop.first else 'ghost' }}"
+              hx-post="{{ url_for('web.finding_transition', group_id=d.group.id) }}"
+              hx-vals='{"to_status": "{{ to_status }}"}'
+              hx-include="#note-{{ d.group.id }}"
+              hx-target="#drawer" hx-swap="innerHTML">{{ label }}</button>
+      {% endfor %}
+    </div>
+    {% else %}
+    <span class="muted">No status actions available.</span>
+    {% endif %}
+  </footer>
+</aside>

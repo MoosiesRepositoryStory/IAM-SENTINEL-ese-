@@ -55,14 +55,15 @@
     </thead>
     <tbody>
       {% for f in result.rows %}
-      <tr>
+      <tr hx-get="{{ url_for('web.finding_drawer', group_id=f.group_id) }}"
+          hx-target="#drawer" hx-swap="innerHTML" hx-push-url="true">
         {% for col in columns if col.key in colset %}
           {% if col.key == 'risk' %}
             <td class="num"><span class="risk {{ sev_class.get(f.severity, 'r-low') }}">{{ f.risk_score }}</span></td>
           {% elif col.key == 'severity' %}
             <td><span class="pill sev-{{ f.severity }}"><span class="dot"></span>{{ f.severity | capitalize }}</span></td>
           {% elif col.key == 'status' %}
-            <td><span class="status st-{{ f.status }}">{{ f.status | replace('_', ' ') }}</span></td>
+            <td id="row-status-{{ f.group_id }}"><span class="status st-{{ f.status }}">{{ f.status | replace('_', ' ') }}</span></td>
           {% elif col.key == 'title' %}
             <td><div class="title-cell" title="{{ f.title }}">{{ f.title }}</div></td>
           {% elif col.key == 'principal' %}
