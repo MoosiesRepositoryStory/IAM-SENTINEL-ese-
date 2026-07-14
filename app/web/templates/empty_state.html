@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% set active_nav = 'findings' %}
+{% block title %}Findings · IAM Sentinel{% endblock %}
+{% block crumb %}<b>Findings</b>{% endblock %}
+
+{% block main %}
+<div class="page-head"><h1>Findings</h1></div>
+<div class="empty">
+  <div class="big">🛡️</div>
+  <h2>No scans yet</h2>
+  <p>Run a scan to populate the findings table.</p>
+  <p style="margin-top:14px">
+    <code>iam-sentinel scan --inventory samples/users.csv --policies samples/policies.json --logs samples/auth.log</code>
+  </p>
+</div>
+{% endblock %}

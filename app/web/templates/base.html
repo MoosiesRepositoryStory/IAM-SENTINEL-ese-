@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en" x-data="theme" :data-theme="mode" x-init="init()">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}IAM Sentinel{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <script defer src="{{ url_for('static', filename='vendor/alpine.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='vendor/htmx.min.js') }}"></script>
+  <script>
+    // Alpine theme store: persists to localStorage, defaults to dark.
+    document.addEventListener('alpine:init', () => {
+      Alpine.data('theme', () => ({
+        mode: localStorage.getItem('sentinel-theme') || 'dark',
+        init() { this.$watch('mode', v => localStorage.setItem('sentinel-theme', v)); },
+        toggle() { this.mode = this.mode === 'dark' ? 'light' : 'dark'; },
+      }));
+    });
+  </script>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><span class="logo">🛡️</span> IAM Sentinel</div>
+    {% set nav = active_nav | default('findings') %}
+    <a class="nav-item {{ 'active' if nav == 'dashboard' }}"><span class="ico">▚</span> Dashboard</a>
+    <a class="nav-item {{ 'active' if nav == 'findings' }}" href="{{ url_for('web.findings') }}"><span class="ico">◈</span> Findings</a>
+    <a class="nav-item {{ 'active' if nav == 'graph' }}"><span class="ico">⧉</span> Graph</a>
+    <a class="nav-item {{ 'active' if nav == 'compliance' }}"><span class="ico">✓</span> Compliance</a>
+    <div class="nav-section">Operate</div>
+    <a class="nav-item {{ 'active' if nav == 'runs' }}"><span class="ico">↻</span> Runs</a>
+    <a class="nav-item {{ 'active' if nav == 'accounts' }}"><span class="ico">☁</span> Accounts</a>
+    <a class="nav-item {{ 'active' if nav == 'exceptions' }}"><span class="ico">⊘</span> Exceptions</a>
+    <div class="sidebar-spacer"></div>
+    <a class="nav-item {{ 'active' if nav == 'settings' }}"><span class="ico">⚙</span> Settings</a>
+  </aside>
+
+  <header class="topbar">
+    <div class="crumb">{% block crumb %}<b>Findings</b>{% endblock %}</div>
+    <div class="topbar-right">
+      <button class="icon-btn" title="Command palette (⌘K)" aria-label="Command palette">⌘</button>
+      <button class="icon-btn" @click="toggle()" :title="mode === 'dark' ? 'Switch to light' : 'Switch to dark'" aria-label="Toggle theme">
+        <span x-text="mode === 'dark' ? '☀' : '☾'"></span>
+      </button>
+    </div>
+  </header>
+
+  <main class="main">
+    {% block main %}{% endblock %}
+  </main>
+</div>
+</body>
+</html>

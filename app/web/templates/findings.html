@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% set active_nav = 'findings' %}
+{% block title %}Findings · IAM Sentinel{% endblock %}
+{% block crumb %}<b>Findings</b>{% if account %} · {{ account.name }}{% endif %}{% endblock %}
+
+{% block main %}
+<div class="page-head"><h1>Findings</h1></div>
+<p class="page-sub">
+  {% if result.run %}
+    Latest completed scan · run #{{ result.run.id }}
+    {% if result.run.composite_score is not none %} · posture {{ result.run.composite_score }}/100{% endif %}
+  {% endif %}
+</p>
+
+<!-- The filter form owns all query state except pagination; any change re-fetches
+     just the table region and pushes the new URL. -->
+<form id="filterform" class="filterbar"
+      hx-get="{{ url_for('web.findings') }}"
+      hx-target="#table-region" hx-swap="innerHTML"
+      hx-push-url="true"
+      hx-trigger="change, keyup changed delay:300ms from:input[name=q], sort-changed"
+      hx-indicator="#tbl-spin"
+      onsubmit="return false">
+
+  <input type="hidden" name="sort" id="sortField" value="{{ sort_query }}">
+  <input type="hidden" name="cols" id="colsField" value="{{ selected_cols | join(',') }}">
+
+  <label class="search">
+    <span class="ico">⌕</span>
+    <input type="text" name="q" placeholder="Search title or principal…"
+           value="{{ result.filters.search }}" autocomplete="off">
+  </label>
+
+  {% macro facet(name, label, facet_counts) %}
+  <div class="facet" x-data="{ open: false }" @click.outside="open = false">
+    {% set chosen = result.filters[name] %}
+    <div class="chip {{ 'on' if chosen }}" @click="open = !open">
+      {{ label }}{% if chosen %} · {{ chosen | length }}{% endif %}
+      <span class="caret">▾</span>
+    </div>
+    <div class="dropdown" x-show="open" x-cloak style="display:none">
+      {% for value, count in facet_counts.items() | sort %}
+      <label class="opt">
+        <input type="checkbox" name="{{ name }}" value="{{ value }}"
+               {{ 'checked' if value in chosen }}>
+        <span style="text-transform:capitalize">{{ value | lower }}</span>
+        <span class="count">{{ count }}</span>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+  {% endmacro %}
+
+  {{ facet('severity', 'Severity', result.facets.severity) }}
+  {{ facet('status', 'Status', result.facets.status) }}
+  {{ facet('category', 'Category', result.facets.category) }}
+
+  <!-- Columns menu: toggles write the ordered key list into #colsField, whose
+       change bubbles to the form and refetches. -->
+  <div class="facet" x-data="{ open: false }" @click.outside="open = false">
+    <div class="chip" @click="open = !open">⚏ Columns <span class="caret">▾</span></div>
+    <div class="dropdown right" x-show="open" x-cloak style="display:none">
+      {% for col in columns %}
+      <label class="opt">
+        <input type="checkbox"
+               {{ 'checked' if col.key in selected_cols }}
+               onchange="toggleColumn('{{ col.key }}', this.checked)">
+        {{ col.label }}
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if result.filters.active %}
+  <a class="clear-link" href="{{ url_for('web.findings') }}">Clear filters</a>
+  {% endif %}
+</form>
+
+<div id="table-region">
+  {% include "partials/findings_table.html" %}
+</div>
+
+<script>
+  // Sorting: header buttons mutate #sortField then fire a custom event the form
+  // listens for. Shift-click appends to a multi-column sort; plain click replaces.
+  function setSort(key, additive) {
+    const field = document.getElementById('sortField');
+    let parts = field.value ? field.value.split(',').filter(Boolean) : [];
+    const idx = parts.findIndex(p => p.replace(/^-/, '') === key);
+    let next;
+    if (idx === -1) {
+      next = key; // new column, ascending... but risk-like feel: default desc
+      next = '-' + key;
+    } else {
+      const cur = parts[idx];
+      next = cur.startsWith('-') ? key : '-' + key; // toggle dir
+    }
+    if (additive) {
+      if (idx === -1) parts.push(next); else parts[idx] = next;
+    } else {
+      parts = [next];
+    }
+    field.value = parts.join(',');
+    field.dispatchEvent(new Event('sort-changed', { bubbles: true }));
+  }
+
+  // Column toggle: keep the master COLUMNS order, filter to checked keys.
+  const COLUMN_ORDER = {{ columns | map(attribute='key') | list | tojson }};
+  function toggleColumn(key, on) {
+    const field = document.getElementById('colsField');
+    const set = new Set(field.value.split(',').filter(Boolean));
+    if (on) set.add(key); else set.delete(key);
+    field.value = COLUMN_ORDER.filter(k => set.has(k)).join(',');
+    field.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+</script>
+{% endblock %}

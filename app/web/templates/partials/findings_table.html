@@ -1,0 +1,105 @@
+{# Swappable table region: meta bar + header + rows + pager.
+   Rendered standalone for htmx swaps and included by findings.html on full load. #}
+{% set colset = selected_cols %}
+{% set sev_class = {'CRITICAL': 'r-crit', 'HIGH': 'r-high', 'MEDIUM': 'r-med', 'LOW': 'r-low'} %}
+
+{% macro sort_arrow(key) %}
+  {%- if key in sort_map -%}
+    <span class="arrow">{{ '▼' if sort_map[key] else '▲' }}</span>
+  {%- endif -%}
+{% endmacro %}
+
+<div class="table-wrap">
+  <div class="tbl-meta">
+    {% if result.total %}
+      <span>Showing <b>{{ result.start_index }}–{{ result.end_index }}</b> of <b>{{ result.total }}</b>
+        finding{{ '' if result.total == 1 else 's' }}
+        {%- if result.filters.active %} (filtered){% endif %}</span>
+    {% else %}
+      <span>No findings match</span>
+    {% endif %}
+    <span id="tbl-spin" class="htmx-indicator"><span class="spin">◠</span></span>
+    <div class="right">
+      {% if result.pages > 1 %}
+      <div class="pager">
+        <button {{ 'disabled' if result.page <= 1 }}
+                hx-get="{{ url_for('web.findings', page=result.page - 1) }}"
+                hx-include="#filterform" hx-target="#table-region" hx-swap="innerHTML"
+                hx-push-url="true">‹ Prev</button>
+        <span>{{ result.page }} / {{ result.pages }}</span>
+        <button {{ 'disabled' if result.page >= result.pages }}
+                hx-get="{{ url_for('web.findings', page=result.page + 1) }}"
+                hx-include="#filterform" hx-target="#table-region" hx-swap="innerHTML"
+                hx-push-url="true">Next ›</button>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if result.rows %}
+  <div class="tbl-scroll">
+  <table class="findings">
+    <thead>
+      <tr>
+        {% for col in columns if col.key in colset %}
+          {% if col.sortable %}
+          <th class="sortable {{ 'num' if col.key == 'risk' }}"
+              onclick="setSort('{{ col.key }}', event.shiftKey)">
+            {{ col.label }}{{ sort_arrow(col.key) }}
+          </th>
+          {% else %}
+          <th>{{ col.label }}</th>
+          {% endif %}
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in result.rows %}
+      <tr>
+        {% for col in columns if col.key in colset %}
+          {% if col.key == 'risk' %}
+            <td class="num"><span class="risk {{ sev_class.get(f.severity, 'r-low') }}">{{ f.risk_score }}</span></td>
+          {% elif col.key == 'severity' %}
+            <td><span class="pill sev-{{ f.severity }}"><span class="dot"></span>{{ f.severity | capitalize }}</span></td>
+          {% elif col.key == 'status' %}
+            <td><span class="status st-{{ f.status }}">{{ f.status | replace('_', ' ') }}</span></td>
+          {% elif col.key == 'title' %}
+            <td><div class="title-cell" title="{{ f.title }}">{{ f.title }}</div></td>
+          {% elif col.key == 'principal' %}
+            <td class="mono">{{ f.principal_uid or '—' }}</td>
+          {% elif col.key == 'category' %}
+            <td style="text-transform:capitalize">{{ f.category }}</td>
+          {% elif col.key == 'compliance' %}
+            <td>
+              {% set tags = f.compliance_tags %}
+              {% if tags %}
+                <span class="tags">
+                {% if tags is mapping %}
+                  {% for k in tags.keys() | list %}{% if loop.index <= 3 %}<span class="tag">{{ k }}</span>{% endif %}{% endfor %}
+                {% else %}
+                  {% for t in tags %}{% if loop.index <= 3 %}<span class="tag">{{ t }}</span>{% endif %}{% endfor %}
+                {% endif %}
+                </span>
+              {% else %}—{% endif %}
+            </td>
+          {% elif col.key == 'last_seen' %}
+            <td class="mono">{{ (f.updated_at or '')[:10] or '—' }}</td>
+          {% elif col.key == 'first_seen' %}
+            <td class="mono">{{ (f.created_at or '')[:10] or '—' }}</td>
+          {% elif col.key == 'check' %}
+            <td class="mono">{{ f.check_id }}</td>
+          {% endif %}
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <div class="empty">
+    <div class="big">🔍</div>
+    <h2>No findings match your filters</h2>
+    <p>Try clearing a facet or broadening your search.</p>
+  </div>
+  {% endif %}
+</div>
