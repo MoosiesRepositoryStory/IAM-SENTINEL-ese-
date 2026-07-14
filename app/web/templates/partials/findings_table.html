@@ -70,6 +70,12 @@
             <td class="mono">{{ f.principal_uid or '—' }}</td>
           {% elif col.key == 'category' %}
             <td style="text-transform:capitalize">{{ f.category }}</td>
+          {% elif col.key == 'assignee' %}
+            <td id="row-assignee-{{ f.group_id }}">
+              {% set who = assignees.get(f.group_id) %}
+              {% if who %}<span class="assignee"><span class="avatar">{{ who.split()[:2] | map('first') | join | upper }}</span>{{ who }}</span>
+              {% else %}<span class="muted">—</span>{% endif %}
+            </td>
           {% elif col.key == 'compliance' %}
             <td>
               {% set tags = f.compliance_tags %}

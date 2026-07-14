@@ -13,14 +13,24 @@ from sqlalchemy import select
 from app.db import session_scope
 from app.models import Account, AppUser, Run
 from app.models.base import now_iso
+from app.services.collaboration import CommentError, active_users, add_comment, assign
 from app.services.finding_detail import get_finding_detail
 from app.services.finding_query import (
+    assignee_names,
     parse_filters,
     parse_sort,
     query_findings,
     sort_to_query,
 )
 from app.services.workflow_service import STATUS_LABELS, InvalidTransition, transition
+
+# Seeded demo roster (until auth in Phase 4): the current actor is the admin;
+# the analysts make the assignee picker meaningful. (email, name, role).
+_DEMO_ROSTER = [
+    ("demo@iam-sentinel.local", "Demo Analyst", "admin"),
+    ("priya@iam-sentinel.local", "Priya Nair", "analyst"),
+    ("sam@iam-sentinel.local", "Sam Okafor", "analyst"),
+]
 
 bp = Blueprint("web", __name__)
 
@@ -33,6 +43,7 @@ COLUMNS: list[dict[str, str | bool]] = [
     {"key": "title", "label": "Title", "sortable": True, "default": True},
     {"key": "principal", "label": "Principal", "sortable": True, "default": True},
     {"key": "category", "label": "Category", "sortable": True, "default": True},
+    {"key": "assignee", "label": "Assignee", "sortable": False, "default": True},
     {"key": "compliance", "label": "Compliance", "sortable": False, "default": True},
     {"key": "last_seen", "label": "Last seen", "sortable": True, "default": True},
     {"key": "first_seen", "label": "First seen", "sortable": True, "default": False},
@@ -47,21 +58,27 @@ def _current_account(session) -> Account | None:  # noqa: ANN001
 
 
 def _current_user(session) -> AppUser:  # noqa: ANN001
-    """Until auth lands in Phase 4, all workflow actions are attributed to a
-    single seeded demo user so the audit trail shows a real name. Seeded as admin
-    so every Slice-2a transition (incl. accept-risk) is permitted in the demo."""
-    user = session.scalar(select(AppUser).where(AppUser.email == "demo@iam-sentinel.local"))
-    if user is None:
-        user = AppUser(
-            email="demo@iam-sentinel.local",
-            display_name="Demo Analyst",
-            password_hash="!",  # unusable; real auth arrives in Phase 4
-            role="admin",
-            last_login_at=now_iso(),
-        )
-        session.add(user)
-        session.flush()
-    return user
+    """Until auth lands in Phase 4, actions are attributed to the seeded admin
+    ("Demo Analyst") so the audit trail shows a real name and every transition
+    (incl. accept-risk) is permitted. Also seeds the analyst roster so the
+    assignee picker is populated."""
+    admin: AppUser | None = None
+    for email, name, role in _DEMO_ROSTER:
+        user = session.scalar(select(AppUser).where(AppUser.email == email))
+        if user is None:
+            user = AppUser(
+                email=email,
+                display_name=name,
+                password_hash="!",  # unusable; real auth arrives in Phase 4
+                role=role,
+                last_login_at=now_iso() if role == "admin" else None,
+            )
+            session.add(user)
+            session.flush()
+        if role == "admin":
+            admin = user
+    assert admin is not None
+    return admin
 
 
 def _selected_columns() -> list[str]:
@@ -97,6 +114,21 @@ def findings() -> Response | str:
     return _render_findings(full_page=not _is_htmx())
 
 
+def _render_drawer(session, group_id: int, **extra) -> str:  # noqa: ANN001, ANN003
+    """Render the drawer partial for ``group_id`` (404s if missing). ``extra``
+    passes flags like ``oob_status`` / ``oob_assignee`` / ``error``."""
+    detail = get_finding_detail(session, group_id)
+    if detail is None:
+        abort(404)
+    return render_template(
+        "partials/finding_drawer.html",
+        d=detail,
+        status_labels=STATUS_LABELS,
+        users=active_users(session),
+        **extra,
+    )
+
+
 @bp.get("/findings/<int:group_id>")
 def finding_drawer(group_id: int) -> Response | str:
     """Finding detail drawer (§8.8). htmx → the drawer partial; a direct visit
@@ -104,12 +136,8 @@ def finding_drawer(group_id: int) -> Response | str:
     if not _is_htmx():
         return _render_findings(full_page=True, open_group=group_id)
     with session_scope() as session:
-        detail = get_finding_detail(session, group_id)
-        if detail is None:
-            abort(404)
-        return render_template(
-            "partials/finding_drawer.html", d=detail, status_labels=STATUS_LABELS
-        )
+        _current_user(session)  # seed the roster so the assignee picker is populated
+        return _render_drawer(session, group_id)
 
 
 @bp.post("/findings/<int:group_id>/transition")
@@ -126,20 +154,45 @@ def finding_transition(group_id: int) -> Response | str | tuple[str, int]:
         try:
             transition(session, detail.group, to_status, actor_id=actor.id, note=note)
         except InvalidTransition as exc:
-            return render_template(
-                "partials/finding_drawer.html",
-                d=get_finding_detail(session, group_id),
-                status_labels=STATUS_LABELS,
-                error=str(exc),
-            ), 409
-        # Re-read so history + available actions reflect the new status.
+            return _render_drawer(session, group_id, error=str(exc)), 409
+        return _render_drawer(session, group_id, oob_status=True)
+
+
+@bp.post("/findings/<int:group_id>/comment")
+def finding_comment(group_id: int) -> Response | str | tuple[str, int]:
+    """Add a comment and return the refreshed drawer (Activity tab focused)."""
+    body = request.form.get("body") or ""
+    with session_scope() as session:
         detail = get_finding_detail(session, group_id)
-        return render_template(
-            "partials/finding_drawer.html",
-            d=detail,
-            status_labels=STATUS_LABELS,
-            oob_status=True,
-        )
+        if detail is None:
+            abort(404)
+        author = _current_user(session)
+        try:
+            add_comment(session, detail.group, author_id=author.id, body=body)
+        except CommentError as exc:
+            return _render_drawer(session, group_id, error=str(exc), focus_tab="activity"), 400
+        return _render_drawer(session, group_id, focus_tab="activity")
+
+
+@bp.post("/findings/<int:group_id>/assign")
+def finding_assign(group_id: int) -> Response | str:
+    """Assign/unassign the finding and return the refreshed drawer plus an
+    out-of-band swap for the table row's assignee cell. ``assignee_id`` may be
+    'me', '' / 'none' (unassign), or a user id."""
+    raw = (request.form.get("assignee_id") or "").strip()
+    with session_scope() as session:
+        detail = get_finding_detail(session, group_id)
+        if detail is None:
+            abort(404)
+        actor = _current_user(session)
+        if raw == "me":
+            assignee_id: int | None = actor.id
+        elif raw in {"", "none"}:
+            assignee_id = None
+        else:
+            assignee_id = int(raw) if raw.isdigit() else None
+        assign(session, detail.group, assignee_id=assignee_id, actor_id=actor.id)
+        return _render_drawer(session, group_id, oob_assignee=True)
 
 
 def _is_htmx() -> bool:
@@ -158,6 +211,7 @@ def _render_findings(*, full_page: bool, open_group: int | None = None) -> Respo
             return render_template("empty_state.html", reason="no_data", columns=COLUMNS)
 
         result = query_findings(session, account.id, sort=sort, filters=filters, page=page)
+        assignees = assignee_names(session, [row.group_id for row in result.rows])
         # Expunge so template access after the session closes doesn't lazy-load.
         for row in result.rows:
             session.expunge(row)
@@ -168,6 +222,7 @@ def _render_findings(*, full_page: bool, open_group: int | None = None) -> Respo
     ctx = {
         "account": account,
         "result": result,
+        "assignees": assignees,
         "columns": COLUMNS,
         "selected_cols": columns,
         "sort_query": sort_to_query(sort),

@@ -389,6 +389,34 @@ table.findings { width: 100%; border-collapse: collapse; font-size: 13px; }
 .btn.ghost { background: transparent; color: var(--text-muted); }
 .btn.ghost:hover { color: var(--text); border-color: var(--text-faint); }
 
+/* ---- Assignee (§7.2) ---- */
+.assignee { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; }
+.avatar {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--accent-soft); color: var(--accent);
+  font-size: 9.5px; font-weight: 700; letter-spacing: .02em; flex: none;
+}
+.assignee-cell { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.assign-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.assign-picker {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  border-radius: 7px; padding: 5px 8px; font: inherit; font-size: 12.5px; cursor: pointer;
+}
+.assign-picker:focus { outline: none; border-color: var(--accent); }
+.btn.tiny { padding: 5px 10px; font-size: 12px; }
+
+/* ---- Comments (§7.3) ---- */
+.comment-box { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+.comment-box .btn { align-self: flex-end; }
+.tl-comment {
+  margin-top: 4px; padding: 8px 11px; border-radius: 8px;
+  background: var(--bg-elev-2); border: 1px solid var(--border);
+  font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; color: var(--text);
+}
+.tl-dot.k-comment { background: var(--accent); }
+.tl-dot.k-assignment { background: var(--sev-medium); }
+
 @media (max-width: 820px) {
   .app { grid-template-columns: 0 1fr; }
   .sidebar { display: none; }

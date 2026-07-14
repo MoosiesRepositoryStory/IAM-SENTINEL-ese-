@@ -20,7 +20,7 @@ from sqlalchemy import Select, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.domain.enums import Category, Severity, Status
-from app.models import Finding, FindingGroup, Run
+from app.models import AppUser, Finding, FindingGroup, Run
 
 # Columns the table may sort by, mapped to their ORM sort expression. Anything
 # not in here is rejected and falls back to the default sort.
@@ -234,6 +234,19 @@ def query_findings(
         run=run, rows=rows, total=total, page=page, page_size=page_size,
         sort=sort, filters=filters, facets=facets,
     )
+
+
+def assignee_names(session: Session, group_ids: list[int]) -> dict[int, str]:
+    """Map group id -> assignee display name for the groups that have one, so the
+    table's Assignee column can render without a per-row lookup."""
+    if not group_ids:
+        return {}
+    rows = session.execute(
+        select(FindingGroup.id, AppUser.display_name)
+        .join(AppUser, FindingGroup.assignee_id == AppUser.id)
+        .where(FindingGroup.id.in_(group_ids))
+    )
+    return {row.id: row.display_name for row in rows}
 
 
 def group_meta(session: Session, group_ids: list[int]) -> dict[int, FindingGroup]:

@@ -7,7 +7,15 @@
 </td>
 {% endif %}
 
+{% if oob_assignee %}
+<td id="row-assignee-{{ d.group.id }}" hx-swap-oob="true">
+  {% if d.assignee_name %}<span class="assignee"><span class="avatar">{{ d.assignee_name.split()[:2] | map('first') | join | upper }}</span>{{ d.assignee_name }}</span>
+  {% else %}<span class="muted">—</span>{% endif %}
+</td>
+{% endif %}
+
 {% set f = d.finding %}
+{% set active_tab = focus_tab | default('overview', true) %}
 {% set sev_class = {'CRITICAL': 'r-crit', 'HIGH': 'r-high', 'MEDIUM': 'r-med', 'LOW': 'r-low'} %}
 
 <div class="drawer-backdrop" onclick="closeDrawer()"></div>
@@ -36,19 +44,42 @@
   {% endif %}
 
   <nav class="drawer-tabs">
-    <button class="drawer-tab on" onclick="drawerTab(this, 'overview')">Overview</button>
-    <button class="drawer-tab" onclick="drawerTab(this, 'evidence')">Evidence</button>
-    <button class="drawer-tab" onclick="drawerTab(this, 'remediation')">Remediation</button>
-    <button class="drawer-tab" onclick="drawerTab(this, 'activity')">
-      Activity <span class="tab-count">{{ d.history | length }}</span>
+    <button class="drawer-tab {{ 'on' if active_tab == 'overview' }}" onclick="drawerTab(this, 'overview')">Overview</button>
+    <button class="drawer-tab {{ 'on' if active_tab == 'evidence' }}" onclick="drawerTab(this, 'evidence')">Evidence</button>
+    <button class="drawer-tab {{ 'on' if active_tab == 'remediation' }}" onclick="drawerTab(this, 'remediation')">Remediation</button>
+    <button class="drawer-tab {{ 'on' if active_tab == 'activity' }}" onclick="drawerTab(this, 'activity')">
+      Activity <span class="tab-count">{{ d.activity | length }}</span>
     </button>
   </nav>
 
   <div class="drawer-body">
     <!-- Overview -->
-    <section data-tab="overview">
+    <section data-tab="overview" style="{{ 'display:none' if active_tab != 'overview' }}">
       <dl class="meta-grid">
         <dt>Status</dt><dd>{{ status_labels.get(d.group.current_status, d.group.current_status) }}</dd>
+        <dt>Assignee</dt>
+        <dd class="assignee-cell">
+          {% if d.assignee_name %}
+            <span class="assignee"><span class="avatar">{{ d.assignee_name.split()[:2] | map('first') | join | upper }}</span>{{ d.assignee_name }}</span>
+          {% else %}
+            <span class="muted">Unassigned</span>
+          {% endif %}
+          <div class="assign-controls">
+            <button class="btn ghost tiny"
+                    hx-post="{{ url_for('web.finding_assign', group_id=d.group.id) }}"
+                    hx-vals='{"assignee_id": "me"}'
+                    hx-target="#drawer" hx-swap="innerHTML">Assign to me</button>
+            <select class="assign-picker"
+                    hx-post="{{ url_for('web.finding_assign', group_id=d.group.id) }}"
+                    hx-target="#drawer" hx-swap="innerHTML"
+                    name="assignee_id" aria-label="Assign to">
+              <option value="none" {{ 'selected' if not d.group.assignee_id }}>Unassigned</option>
+              {% for u in users %}
+              <option value="{{ u.id }}" {{ 'selected' if u.id == d.group.assignee_id }}>{{ u.display_name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </dd>
         <dt>Risk score</dt><dd>{{ f.risk_score }}/100</dd>
         <dt>Severity</dt><dd>{{ f.severity | capitalize }}</dd>
         <dt>Likelihood</dt><dd>{{ f.likelihood if f.likelihood is not none else '—' }}</dd>
@@ -70,7 +101,7 @@
     </section>
 
     <!-- Evidence -->
-    <section data-tab="evidence" style="display:none">
+    <section data-tab="evidence" style="{{ 'display:none' if active_tab != 'evidence' }}">
       {% if f.evidence %}
         {% for key, val in f.evidence.items() %}
         <div class="ev-block">
@@ -91,7 +122,7 @@
     </section>
 
     <!-- Remediation -->
-    <section data-tab="remediation" style="display:none">
+    <section data-tab="remediation" style="{{ 'display:none' if active_tab != 'remediation' }}">
       {% if f.recommendation %}<p class="reco">{{ f.recommendation }}</p>{% endif %}
       {% if f.remediation_snippet %}
       <div class="snippet">
@@ -103,24 +134,43 @@
       {% endif %}
     </section>
 
-    <!-- Activity / audit trail -->
-    <section data-tab="activity" style="display:none">
+    <!-- Activity / audit trail: status + comments + assignment, unified -->
+    <section data-tab="activity" style="{{ 'display:none' if active_tab != 'activity' }}">
+      <div class="comment-box">
+        <textarea id="comment-{{ d.group.id }}" name="body" class="note-input"
+                  placeholder="Add a comment…" rows="2"></textarea>
+        <button class="btn primary tiny"
+                hx-post="{{ url_for('web.finding_comment', group_id=d.group.id) }}"
+                hx-include="#comment-{{ d.group.id }}"
+                hx-target="#drawer" hx-swap="innerHTML">Comment</button>
+      </div>
+
       <ol class="timeline">
-        {% for e in d.history | reverse %}
+        {% for e in d.activity | reverse %}
         <li class="tl-item">
-          <span class="tl-dot st-{{ e.to_status }}"></span>
+          <span class="tl-dot {{ 'st-' ~ e.to_status if e.kind == 'status' else 'k-' ~ e.kind }}"></span>
           <div class="tl-body">
-            <div class="tl-line">
-              {% if e.from_status is none %}
-                <b>Detected</b> as {{ status_labels.get(e.to_status, e.to_status) }}
-              {% else %}
-                <b>{{ e.actor_name }}</b> changed status
-                <span class="status st-{{ e.from_status }} inline">{{ status_labels.get(e.from_status, e.from_status) }}</span>
-                →
-                <span class="status st-{{ e.to_status }} inline">{{ status_labels.get(e.to_status, e.to_status) }}</span>
-              {% endif %}
-            </div>
-            {% if e.note %}<div class="tl-note">“{{ e.note }}”</div>{% endif %}
+            {% if e.kind == 'status' %}
+              <div class="tl-line">
+                {% if e.from_status is none %}
+                  <b>Detected</b> as {{ status_labels.get(e.to_status, e.to_status) }}
+                {% else %}
+                  <b>{{ e.actor_name }}</b> changed status
+                  <span class="status st-{{ e.from_status }} inline">{{ status_labels.get(e.from_status, e.from_status) }}</span>
+                  →
+                  <span class="status st-{{ e.to_status }} inline">{{ status_labels.get(e.to_status, e.to_status) }}</span>
+                {% endif %}
+              </div>
+              {% if e.note %}<div class="tl-note">“{{ e.note }}”</div>{% endif %}
+            {% elif e.kind == 'comment' %}
+              <div class="tl-line"><b>{{ e.actor_name }}</b> commented</div>
+              <div class="tl-comment">{{ e.body }}</div>
+            {% elif e.kind == 'assignment' %}
+              <div class="tl-line">
+                {% if e.assign_to %}<b>{{ e.actor_name }}</b> assigned this to <b>{{ e.assign_to }}</b>
+                {% else %}<b>{{ e.actor_name }}</b> unassigned this{% endif %}
+              </div>
+            {% endif %}
             <time class="tl-time">{{ e.at | replace('T', ' ') | truncate(19, true, '') }}</time>
           </div>
         </li>
