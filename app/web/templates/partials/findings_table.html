@@ -63,7 +63,13 @@
           {% elif col.key == 'severity' %}
             <td><span class="pill sev-{{ f.severity }}"><span class="dot"></span>{{ f.severity | capitalize }}</span></td>
           {% elif col.key == 'status' %}
-            <td id="row-status-{{ f.group_id }}"><span class="status st-{{ f.status }}">{{ f.status | replace('_', ' ') }}</span></td>
+            <td id="row-status-{{ f.group_id }}">
+              <span class="status st-{{ f.status }}">{{ f.status | replace('_', ' ') }}</span>
+              {% set exc = exceptions.get(f.group_id) %}
+              {% if exc %}
+              <span class="exc-badge" title="{{ exc.reason }}{{ ' · Expires ' ~ exc.expires_at if exc.expires_at else ' · No expiry' }}">⏳</span>
+              {% endif %}
+            </td>
           {% elif col.key == 'title' %}
             <td><div class="title-cell" title="{{ f.title }}">{{ f.title }}</div></td>
           {% elif col.key == 'principal' %}

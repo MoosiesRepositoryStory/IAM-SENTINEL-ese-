@@ -54,9 +54,14 @@ def test_transition_table_is_self_consistent() -> None:
         assert {to for to, _ in available_actions(status)} == targets
 
 
-def test_open_offers_investigate_and_accept_risk() -> None:
+def test_open_offers_investigate_suppress_and_accept_risk() -> None:
+    # Slice 2c adds 'suppressed' as a reachable target from open.
     targets = {to for to, _ in available_actions("open")}
-    assert targets == {"investigating", "accepted_risk"}
+    assert targets == {"investigating", "suppressed", "accepted_risk"}
+
+
+def test_suppressed_offers_only_reopen() -> None:
+    assert available_actions("suppressed") == [("open", "Reopen")]
 
 
 # ---- transitions against real findings ----

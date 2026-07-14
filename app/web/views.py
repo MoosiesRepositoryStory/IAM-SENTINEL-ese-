@@ -14,6 +14,14 @@ from app.db import session_scope
 from app.models import Account, AppUser, Run
 from app.models.base import now_iso
 from app.services.collaboration import CommentError, active_users, add_comment, assign
+from app.services.exception_service import (
+    EXCEPTION_STATUSES,
+    ExceptionError,
+    active_exceptions,
+    create_exception,
+    expire_exceptions,
+    revoke_exception,
+)
 from app.services.finding_detail import get_finding_detail
 from app.services.finding_query import (
     assignee_names,
@@ -137,13 +145,16 @@ def finding_drawer(group_id: int) -> Response | str:
         return _render_findings(full_page=True, open_group=group_id)
     with session_scope() as session:
         _current_user(session)  # seed the roster so the assignee picker is populated
+        expire_exceptions(session)  # re-surface anything whose expiry has passed
         return _render_drawer(session, group_id)
 
 
 @bp.post("/findings/<int:group_id>/transition")
 def finding_transition(group_id: int) -> Response | str | tuple[str, int]:
     """Apply a status change and return the refreshed drawer plus an out-of-band
-    swap for the table row's status pill."""
+    swap for the table row's status pill. Reopening from suppressed/accepted-risk
+    is routed through ``revoke_exception`` so the exception row closes out too —
+    a plain ``transition`` call would leave it stale."""
     to_status = (request.form.get("to_status") or "").strip()
     note = request.form.get("note")
     with session_scope() as session:
@@ -152,10 +163,47 @@ def finding_transition(group_id: int) -> Response | str | tuple[str, int]:
             abort(404)
         actor = _current_user(session)
         try:
-            transition(session, detail.group, to_status, actor_id=actor.id, note=note)
+            if to_status == "open" and detail.group.current_status in EXCEPTION_STATUSES:
+                revoke_exception(session, detail.group, actor_id=actor.id, note=note or "Exception revoked")
+            else:
+                transition(session, detail.group, to_status, actor_id=actor.id, note=note)
         except InvalidTransition as exc:
             return _render_drawer(session, group_id, error=str(exc)), 409
         return _render_drawer(session, group_id, oob_status=True)
+
+
+def _apply_exception(group_id: int, kind: str) -> Response | str | tuple[str, int]:
+    reason = request.form.get("reason") or ""
+    expires_at = request.form.get("expires_at") or None
+    with session_scope() as session:
+        detail = get_finding_detail(session, group_id)
+        if detail is None:
+            abort(404)
+        actor = _current_user(session)
+        try:
+            create_exception(
+                session, detail.group, kind=kind, reason=reason, actor_id=actor.id,
+                expires_at=expires_at,
+            )
+        except InvalidTransition as exc:
+            return _render_drawer(session, group_id, error=str(exc)), 409
+        except ExceptionError as exc:
+            return _render_drawer(session, group_id, error=str(exc)), 400
+        return _render_drawer(session, group_id, oob_status=True)
+
+
+@bp.post("/findings/<int:group_id>/suppress")
+def finding_suppress(group_id: int) -> Response | str | tuple[str, int]:
+    """Suppress a finding: requires a reason, no expiry (§7.4 — suppression is
+    "don't show me this", not time-boxed)."""
+    return _apply_exception(group_id, "suppressed")
+
+
+@bp.post("/findings/<int:group_id>/accept-risk")
+def finding_accept_risk(group_id: int) -> Response | str | tuple[str, int]:
+    """Accept risk on a finding: requires a reason, optional expiry after which
+    it auto-reopens (§7.4)."""
+    return _apply_exception(group_id, "accepted_risk")
 
 
 @bp.post("/findings/<int:group_id>/comment")
@@ -210,11 +258,16 @@ def _render_findings(*, full_page: bool, open_group: int | None = None) -> Respo
         if account is None:
             return render_template("empty_state.html", reason="no_data", columns=COLUMNS)
 
+        expire_exceptions(session)  # re-surface anything whose expiry has passed
         result = query_findings(session, account.id, sort=sort, filters=filters, page=page)
-        assignees = assignee_names(session, [row.group_id for row in result.rows])
+        group_ids = [row.group_id for row in result.rows]
+        assignees = assignee_names(session, group_ids)
+        exceptions = active_exceptions(session, group_ids)
         # Expunge so template access after the session closes doesn't lazy-load.
         for row in result.rows:
             session.expunge(row)
+        for exc in exceptions.values():
+            session.expunge(exc)
         if result.run is not None:
             session.expunge(result.run)
         session.expunge(account)
@@ -223,6 +276,7 @@ def _render_findings(*, full_page: bool, open_group: int | None = None) -> Respo
         "account": account,
         "result": result,
         "assignees": assignees,
+        "exceptions": exceptions,
         "columns": COLUMNS,
         "selected_cols": columns,
         "sort_query": sort_to_query(sort),

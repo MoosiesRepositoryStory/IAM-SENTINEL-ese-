@@ -4,6 +4,9 @@
 {% if oob_status %}
 <td id="row-status-{{ d.group.id }}" hx-swap-oob="true">
   <span class="status st-{{ d.group.current_status }}">{{ d.group.current_status | replace('_', ' ') }}</span>
+  {% if d.exception %}
+  <span class="exc-badge" title="{{ d.exception.reason }}{{ ' · Expires ' ~ d.exception.expires_at if d.exception.expires_at else ' · No expiry' }}">⏳</span>
+  {% endif %}
 </td>
 {% endif %}
 
@@ -19,7 +22,7 @@
 {% set sev_class = {'CRITICAL': 'r-crit', 'HIGH': 'r-high', 'MEDIUM': 'r-med', 'LOW': 'r-low'} %}
 
 <div class="drawer-backdrop" onclick="closeDrawer()"></div>
-<aside class="drawer-panel" role="dialog" aria-label="Finding detail">
+<aside class="drawer-panel" role="dialog" aria-label="Finding detail" x-data="{ excForm: null }">
   <header class="drawer-head">
     <div class="drawer-head-top">
       <span class="risk {{ sev_class.get(f.severity, 'r-low') }}">{{ f.risk_score }}</span>
@@ -41,6 +44,19 @@
 
   {% if error %}
   <div class="drawer-error">⚠ {{ error }}</div>
+  {% endif %}
+
+  {% if d.exception %}
+  <div class="exception-panel exc-{{ d.exception.kind }}">
+    <div class="exc-head">
+      <span class="status st-{{ d.exception.kind }}">{{ status_labels.get(d.exception.kind, d.exception.kind) }}</span>
+      <span class="exc-expiry">
+        {% if d.exception.expires_at %}Expires {{ d.exception.expires_at }}{% else %}No expiry{% endif %}
+      </span>
+    </div>
+    <div class="exc-reason">“{{ d.exception.reason }}”</div>
+    <div class="exc-meta">by {{ d.exception.created_by_name }} · {{ d.exception.created_at | replace('T', ' ') | truncate(19, true, '') }}</div>
+  </div>
   {% endif %}
 
   <nav class="drawer-tabs">
@@ -185,13 +201,39 @@
               placeholder="Add an optional note for the audit trail…" rows="1"></textarea>
     <div class="foot-actions">
       {% for to_status, label in d.actions %}
-      <button class="btn {{ 'primary' if loop.first else 'ghost' }}"
-              hx-post="{{ url_for('web.finding_transition', group_id=d.group.id) }}"
-              hx-vals='{"to_status": "{{ to_status }}"}'
-              hx-include="#note-{{ d.group.id }}"
-              hx-target="#drawer" hx-swap="innerHTML">{{ label }}</button>
+        {% if to_status in ('suppressed', 'accepted_risk') %}
+        <button type="button" class="btn ghost"
+                @click="excForm = (excForm === '{{ to_status }}' ? null : '{{ to_status }}')">{{ label }}</button>
+        {% else %}
+        <button class="btn {{ 'primary' if loop.first else 'ghost' }}"
+                hx-post="{{ url_for('web.finding_transition', group_id=d.group.id) }}"
+                hx-vals='{"to_status": "{{ to_status }}"}'
+                hx-include="#note-{{ d.group.id }}"
+                hx-target="#drawer" hx-swap="innerHTML">{{ label }}</button>
+        {% endif %}
       {% endfor %}
     </div>
+
+    <form class="exc-form" x-show="excForm === 'suppressed'" x-cloak
+          hx-post="{{ url_for('web.finding_suppress', group_id=d.group.id) }}"
+          hx-target="#drawer" hx-swap="innerHTML">
+      <textarea name="reason" class="note-input" placeholder="Reason for suppression (required)" rows="2"></textarea>
+      <div class="exc-form-actions">
+        <button type="submit" class="btn primary tiny">Confirm suppress</button>
+      </div>
+    </form>
+
+    <form class="exc-form" x-show="excForm === 'accepted_risk'" x-cloak
+          hx-post="{{ url_for('web.finding_accept_risk', group_id=d.group.id) }}"
+          hx-target="#drawer" hx-swap="innerHTML">
+      <textarea name="reason" class="note-input" placeholder="Reason to accept this risk (required)" rows="2"></textarea>
+      <label class="exc-expiry-field">Optional expiry
+        <input type="date" name="expires_at">
+      </label>
+      <div class="exc-form-actions">
+        <button type="submit" class="btn primary tiny">Confirm accept risk</button>
+      </div>
+    </form>
     {% else %}
     <span class="muted">No status actions available.</span>
     {% endif %}

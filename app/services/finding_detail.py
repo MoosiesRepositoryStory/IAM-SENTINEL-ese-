@@ -25,6 +25,7 @@ from app.models import (
     Run,
 )
 from app.services.collaboration import assignment_events
+from app.services.exception_service import active_exception
 from app.services.workflow_service import available_actions
 
 
@@ -56,6 +57,19 @@ class ActivityItem:
     assign_to: str | None = None  # None => unassigned
 
 
+@dataclass(frozen=True)
+class ExceptionInfo:
+    """The group's current active exception (§7.4) — reason/expiry only, not
+    history; the create/revoke/expire events themselves show up as 'status' kind
+    entries in ``activity`` since they go through the same status transitions."""
+
+    kind: str
+    reason: str
+    expires_at: str | None  # ISO date (YYYY-MM-DD) or None (no expiry)
+    created_by_name: str
+    created_at: str
+
+
 @dataclass
 class FindingDetail:
     group: FindingGroup
@@ -63,6 +77,7 @@ class FindingDetail:
     history: list[AuditEntry]
     activity: list[ActivityItem]
     assignee_name: str | None
+    exception: ExceptionInfo | None
     first_seen: str | None  # ISO date (YYYY-MM-DD) or None
     last_seen: str | None
     age_days: int | None
@@ -120,10 +135,13 @@ def get_finding_detail(session: Session, group_id: int) -> FindingDetail | None:
         )
     )
     assignments = assignment_events(session, group.id)
+    exception = active_exception(session, group.id)
 
     actor_ids: set[int] = {r.actor_id for r in status_rows if r.actor_id is not None}
     actor_ids |= {c.author_id for c in comments}
     actor_ids |= {a.actor_id for a in assignments if a.actor_id is not None}
+    if exception is not None:
+        actor_ids.add(exception.created_by)
     names = _name_map(session, actor_ids)
 
     history = [
@@ -171,12 +189,23 @@ def get_finding_detail(session: Session, group_id: int) -> FindingDetail | None:
     _kind_rank = {"status": 0, "assignment": 1, "comment": 2}
     activity.sort(key=lambda i: (i.at, _kind_rank.get(i.kind, 9)))
 
+    exception_info = None
+    if exception is not None:
+        exception_info = ExceptionInfo(
+            kind=exception.kind,
+            reason=exception.reason,
+            expires_at=exception.expires_at,
+            created_by_name=names.get(exception.created_by, "Unknown"),
+            created_at=exception.created_at,
+        )
+
     return FindingDetail(
         group=group,
         finding=finding,
         history=history,
         activity=activity,
         assignee_name=names.get(group.assignee_id) if group.assignee_id else None,
+        exception=exception_info,
         first_seen=_run_date(session, group.first_seen_run),
         last_seen=_run_date(session, group.last_seen_run),
         age_days=days_since(parse_dt(_run_date(session, group.first_seen_run))),

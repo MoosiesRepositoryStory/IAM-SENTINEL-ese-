@@ -6,13 +6,12 @@ transition writes one ``finding_status_history`` row (from, to, actor, note,
 timestamp) — that history *is* the audit trail rendered in the drawer's Activity
 tab.
 
-Scope note (Phase 1 Slice 2a): this implements the Open/Investigating/Resolved/
-Accepted-Risk transitions and their audit trail. The *exception* side-effects
-that ``suppressed`` and ``accepted_risk`` carry in §7.1 — a ``finding_exception``
-row with a reason + expiry + scheduler-driven re-surfacing — land in Slice 2c, so
-``suppressed`` is intentionally not yet a reachable target here. Role enforcement
-(§10) arrives with auth in Phase 4; for now ``actor_id`` is recorded but not
-gated.
+The exception side-effects that ``suppressed`` and ``accepted_risk`` carry in
+§7.4 — a ``finding_exception`` row with a reason + expiry + scheduler-driven
+re-surfacing — live in ``app.services.exception_service``, which calls
+``transition`` here so creating, revoking, or auto-expiring an exception all
+still land as ordinary history rows. Role enforcement (§10) arrives with auth in
+Phase 4; for now ``actor_id`` is recorded but not gated.
 """
 
 from __future__ import annotations
@@ -26,10 +25,15 @@ from app.models import Finding, FindingGroup, FindingStatusHistory
 # (target status, verb label). ALLOWED_TRANSITIONS is derived from this so the
 # state machine and the drawer footer can never drift apart.
 TRANSITION_ACTIONS: dict[str, list[tuple[str, str]]] = {
-    "open": [("investigating", "Start investigating"), ("accepted_risk", "Accept risk")],
+    "open": [
+        ("investigating", "Start investigating"),
+        ("suppressed", "Suppress"),
+        ("accepted_risk", "Accept risk"),
+    ],
     "investigating": [("resolved", "Resolve"), ("open", "Reopen")],
     "resolved": [("open", "Reopen")],
     "accepted_risk": [("open", "Reopen")],
+    "suppressed": [("open", "Reopen")],
 }
 
 ALLOWED_TRANSITIONS: dict[str, set[str]] = {

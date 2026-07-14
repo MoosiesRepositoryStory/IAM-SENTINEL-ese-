@@ -8,6 +8,21 @@
   <script defer src="{{ url_for('static', filename='vendor/alpine.min.js') }}"></script>
   <script src="{{ url_for('static', filename='vendor/htmx.min.js') }}"></script>
   <script>
+    // Our drawer routes (transition/comment/suppress/accept-risk) return a
+    // non-2xx status on validation failure (bad reason, invalid transition) so
+    // the response is semantically meaningful — but htmx's default
+    // responseHandling only swaps 2xx bodies, silently dropping the rendered
+    // error banner. Extend it to swap 4xx/5xx too, without treating them as
+    // htmx:responseError (which would just log a console error for an expected,
+    // user-facing validation message). Must run before htmx's own DOMContentLoaded
+    // init, hence placed as a plain synchronous script right after it loads.
+    htmx.config.responseHandling = [
+      { code: "204", swap: false },
+      { code: "[23]..", swap: true },
+      { code: "[45]..", swap: true, error: false },
+    ];
+  </script>
+  <script>
     // Alpine theme store: persists to localStorage, defaults to dark.
     document.addEventListener('alpine:init', () => {
       Alpine.data('theme', () => ({
