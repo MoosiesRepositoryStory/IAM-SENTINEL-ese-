@@ -1,0 +1,10 @@
+{# Out-of-band toast, always swapped into base.html's #toast-region regardless
+   of what the main response target is (§8.4: "toast reports 'Updated N findings'").
+   Alpine auto-initializes htmx-injected content via its MutationObserver, same
+   as the drawer's x-data already relies on. #}
+<div id="toast-region" hx-swap-oob="true">
+  <div class="toast" x-data="{ show: true }" x-init="setTimeout(() => show = false, 3500)"
+       x-show="show" x-transition.opacity>
+    {{ message }}
+  </div>
+</div>

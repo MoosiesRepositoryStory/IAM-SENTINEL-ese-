@@ -2,7 +2,13 @@
    close (see findings.html) so it works as htmx-swapped content. #}
 
 {% if oob_status %}
-<td id="row-status-{{ d.group.id }}" hx-swap-oob="true">
+{# data-status/data-actions mirror the <tr>'s own attributes (findings_table.html)
+   so app.js can resync them after this OOB swap — otherwise the row's
+   data-actions (used to build the §8.3 context menu) goes stale after any
+   single-row mutation until the next full-table render. #}
+<td id="row-status-{{ d.group.id }}" hx-swap-oob="true"
+    data-status="{{ d.group.current_status }}"
+    data-actions='{{ available_actions(d.group.current_status) | tojson }}'>
   <span class="status st-{{ d.group.current_status }}">{{ d.group.current_status | replace('_', ' ') }}</span>
   {% if d.exception %}
   <span class="exc-badge" title="{{ d.exception.reason }}{{ ' · Expires ' ~ d.exception.expires_at if d.exception.expires_at else ' · No expiry' }}">⏳</span>
@@ -20,9 +26,15 @@
 {% set f = d.finding %}
 {% set active_tab = focus_tab | default('overview', true) %}
 {% set sev_class = {'CRITICAL': 'r-crit', 'HIGH': 'r-high', 'MEDIUM': 'r-med', 'LOW': 'r-low'} %}
+{# Only these two values are meaningful to the reveal-form Alpine state below
+   (§8.3's "Suppress finding…" / "Accept risk…" context-menu items pre-open the
+   drawer straight to the right form via ?action=). Anything else is ignored. #}
+{% set seed_action = open_action if open_action in ('suppressed', 'accepted_risk') else none %}
 
-<div class="drawer-backdrop" onclick="closeDrawer()"></div>
-<aside class="drawer-panel" role="dialog" aria-label="Finding detail" x-data="{ excForm: null }">
+<div class="drawer-backdrop" onclick="Sentinel.closeDrawer()"></div>
+<aside class="drawer-panel" role="dialog" aria-label="Finding detail"
+       data-group-id="{{ d.group.id }}"
+       x-data="{{ '{ excForm: ' ~ (('\'' ~ seed_action ~ '\'') if seed_action else 'null') ~ ' }' }}">
   <header class="drawer-head">
     <div class="drawer-head-top">
       <span class="risk {{ sev_class.get(f.severity, 'r-low') }}">{{ f.risk_score }}</span>
@@ -30,7 +42,7 @@
       <span class="status st-{{ d.group.current_status }}" id="drawer-status">
         {{ status_labels.get(d.group.current_status, d.group.current_status) }}
       </span>
-      <button class="icon-btn drawer-close" onclick="closeDrawer()" aria-label="Close">✕</button>
+      <button class="icon-btn drawer-close" onclick="Sentinel.closeDrawer()" aria-label="Close">✕</button>
     </div>
     <h2 class="drawer-title">{{ f.title }}</h2>
     <div class="drawer-sub">
@@ -60,10 +72,10 @@
   {% endif %}
 
   <nav class="drawer-tabs">
-    <button class="drawer-tab {{ 'on' if active_tab == 'overview' }}" onclick="drawerTab(this, 'overview')">Overview</button>
-    <button class="drawer-tab {{ 'on' if active_tab == 'evidence' }}" onclick="drawerTab(this, 'evidence')">Evidence</button>
-    <button class="drawer-tab {{ 'on' if active_tab == 'remediation' }}" onclick="drawerTab(this, 'remediation')">Remediation</button>
-    <button class="drawer-tab {{ 'on' if active_tab == 'activity' }}" onclick="drawerTab(this, 'activity')">
+    <button class="drawer-tab {{ 'on' if active_tab == 'overview' }}" onclick="Sentinel.drawerTab(this, 'overview')">Overview</button>
+    <button class="drawer-tab {{ 'on' if active_tab == 'evidence' }}" onclick="Sentinel.drawerTab(this, 'evidence')">Evidence</button>
+    <button class="drawer-tab {{ 'on' if active_tab == 'remediation' }}" onclick="Sentinel.drawerTab(this, 'remediation')">Remediation</button>
+    <button class="drawer-tab {{ 'on' if active_tab == 'activity' }}" onclick="Sentinel.drawerTab(this, 'activity')">
       Activity <span class="tab-count">{{ d.activity | length }}</span>
     </button>
   </nav>

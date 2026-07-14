@@ -13,6 +13,7 @@ from sqlalchemy import select
 from app.db import session_scope
 from app.models import Account, AppUser, Run
 from app.models.base import now_iso
+from app.services.bulk_service import bulk_assign, bulk_exception, bulk_transition
 from app.services.collaboration import CommentError, active_users, add_comment, assign
 from app.services.exception_service import (
     EXCEPTION_STATUSES,
@@ -24,13 +25,19 @@ from app.services.exception_service import (
 )
 from app.services.finding_detail import get_finding_detail
 from app.services.finding_query import (
+    FindingFilters,
     assignee_names,
     parse_filters,
     parse_sort,
     query_findings,
     sort_to_query,
 )
-from app.services.workflow_service import STATUS_LABELS, InvalidTransition, transition
+from app.services.workflow_service import (
+    STATUS_LABELS,
+    InvalidTransition,
+    available_actions,
+    transition,
+)
 
 # Seeded demo roster (until auth in Phase 4): the current actor is the admin;
 # the analysts make the assignee picker meaningful. (email, name, role).
@@ -41,6 +48,11 @@ _DEMO_ROSTER = [
 ]
 
 bp = Blueprint("web", __name__)
+# Single source of truth for the row-level context menu's "Change status" /
+# "Suppress" / "Accept risk" items (§8.3) — the exact function the drawer
+# footer already uses. Registered so findings_table.html can call it per row
+# without a Python-side per-row loop.
+bp.add_app_template_global(available_actions)
 
 # Column definitions drive both the header row and the "Columns" menu (§8.2).
 # ``key`` matches finding_query._SORTABLE where sortable; ``default`` = shown.
@@ -140,13 +152,21 @@ def _render_drawer(session, group_id: int, **extra) -> str:  # noqa: ANN001, ANN
 @bp.get("/findings/<int:group_id>")
 def finding_drawer(group_id: int) -> Response | str:
     """Finding detail drawer (§8.8). htmx → the drawer partial; a direct visit
-    (deep link, §8.11) → the full findings page with the drawer auto-opened."""
+    (deep link, §8.11) → the full findings page with the drawer auto-opened.
+
+    Optional ``?tab=`` opens on a specific tab (used by the context menu's "View
+    evidence" / "Add comment…" items) and ``?action=suppressed|accepted_risk`` also
+    pre-reveals that exception form (used by "Suppress finding…" / "Accept
+    risk…") — both reuse markup/routes already built in 2a-2c, just pre-seeded.
+    """
+    tab = request.args.get("tab")
+    action = request.args.get("action")
     if not _is_htmx():
         return _render_findings(full_page=True, open_group=group_id)
     with session_scope() as session:
         _current_user(session)  # seed the roster so the assignee picker is populated
         expire_exceptions(session)  # re-surface anything whose expiry has passed
-        return _render_drawer(session, group_id)
+        return _render_drawer(session, group_id, focus_tab=tab, open_action=action)
 
 
 @bp.post("/findings/<int:group_id>/transition")
@@ -247,6 +267,92 @@ def _is_htmx() -> bool:
     return request.headers.get("HX-Request") == "true"
 
 
+def _parse_group_ids() -> list[int]:
+    raw = request.form.get("group_ids") or ""
+    return [int(v) for v in raw.split(",") if v.strip().isdigit()]
+
+
+def _bulk_response(result) -> str:  # noqa: ANN001
+    """Re-render the table region plus an out-of-band toast reporting the
+    outcome (§8.4: "toast reports 'Updated N findings'"). The request's current
+    sort/filter/page query string is preserved by the client (see app.js), so
+    this reflects the same view the user was already looking at. Undo is
+    intentionally not implemented in this slice — see the commit notes."""
+    if result.failed:
+        msg = f"Updated {result.count} finding{'s' if result.count != 1 else ''} · {len(result.failed)} skipped"
+    else:
+        msg = f"Updated {result.count} finding{'s' if result.count != 1 else ''}"
+    table_html = _render_findings(full_page=False)
+    assert isinstance(table_html, str)
+    toast_html = render_template("partials/toast.html", message=msg)
+    return table_html + toast_html
+
+
+@bp.post("/findings/bulk/transition")
+def bulk_finding_transition() -> Response | str:
+    group_ids = _parse_group_ids()
+    to_status = (request.form.get("to_status") or "").strip()
+    # _bulk_response re-renders the table via its own session_scope, so the
+    # mutation's session must be committed (the `with` block exited) first — a
+    # nested, still-open session wouldn't see these uncommitted writes.
+    with session_scope() as session:
+        actor = _current_user(session)
+        result = bulk_transition(session, group_ids, to_status, actor_id=actor.id)
+    return _bulk_response(result)
+
+
+@bp.post("/findings/bulk/assign")
+def bulk_finding_assign() -> Response | str:
+    group_ids = _parse_group_ids()
+    raw = (request.form.get("assignee_id") or "").strip()
+    with session_scope() as session:
+        actor = _current_user(session)
+        assignee_id: int | None = actor.id if raw == "me" else (int(raw) if raw.isdigit() else None)
+        result = bulk_assign(session, group_ids, assignee_id, actor_id=actor.id)
+    return _bulk_response(result)
+
+
+@bp.post("/findings/bulk/suppress")
+def bulk_finding_suppress() -> Response | str:
+    return _bulk_apply_exception("suppressed")
+
+
+@bp.post("/findings/bulk/accept-risk")
+def bulk_finding_accept_risk() -> Response | str:
+    return _bulk_apply_exception("accepted_risk")
+
+
+def _bulk_apply_exception(kind: str) -> Response | str:
+    group_ids = _parse_group_ids()
+    reason = request.form.get("reason") or ""
+    expires_at = request.form.get("expires_at") or None
+    with session_scope() as session:
+        actor = _current_user(session)
+        result = bulk_exception(
+            session, group_ids, kind, reason=reason, actor_id=actor.id, expires_at=expires_at
+        )
+    return _bulk_response(result)
+
+
+@bp.get("/command-palette/search")
+def palette_search() -> Response | str:
+    """Findings results for the Cmd+K palette's search section (§8.5) — reuses
+    ``query_findings`` exactly as the table does, just capped short."""
+    q = (request.args.get("q") or "").strip()
+    if len(q) < 2:
+        return ""
+    with session_scope() as session:
+        account = _current_account(session)
+        if account is None:
+            return ""
+        page = query_findings(
+            session, account.id, filters=FindingFilters(search=q), page_size=8
+        )
+        for row in page.rows:
+            session.expunge(row)
+        return render_template("partials/palette_results.html", rows=page.rows)
+
+
 def _render_findings(*, full_page: bool, open_group: int | None = None) -> Response | str:
     sort = parse_sort(request.args.get("sort"))
     filters = parse_filters(request.args)
@@ -258,11 +364,16 @@ def _render_findings(*, full_page: bool, open_group: int | None = None) -> Respo
         if account is None:
             return render_template("empty_state.html", reason="no_data", columns=COLUMNS)
 
+        _current_user(session)  # seed the roster so "Assign to…" isn't empty on first load
         expire_exceptions(session)  # re-surface anything whose expiry has passed
         result = query_findings(session, account.id, sort=sort, filters=filters, page=page)
         group_ids = [row.group_id for row in result.rows]
         assignees = assignee_names(session, group_ids)
         exceptions = active_exceptions(session, group_ids)
+        # active_users() also drives the context menu's "Assign to…" submenu (§8.3);
+        # (id, name) pairs are built here rather than in the template since Jinja
+        # has no builtin `zip` filter.
+        roster_json = [[u.id, u.display_name] for u in active_users(session)]
         # Expunge so template access after the session closes doesn't lazy-load.
         for row in result.rows:
             session.expunge(row)
@@ -277,6 +388,7 @@ def _render_findings(*, full_page: bool, open_group: int | None = None) -> Respo
         "result": result,
         "assignees": assignees,
         "exceptions": exceptions,
+        "roster_json": roster_json,
         "columns": COLUMNS,
         "selected_cols": columns,
         "sort_query": sort_to_query(sort),

@@ -9,6 +9,10 @@
   {%- endif -%}
 {% endmacro %}
 
+{# Roster for the context menu's "Assign to…" submenu (§8.3) — read by app.js,
+   not iterated in Jinja, so it's a single blob rather than per-row markup. #}
+<script type="application/json" id="roster-data">{{ roster_json | tojson }}</script>
+
 <div class="table-wrap">
   <div class="tbl-meta">
     {% if result.total %}
@@ -37,26 +41,50 @@
   </div>
 
   {% if result.rows %}
+  {# Bulk action bar (§8.4): hidden until Sentinel's selection count is >= 1;
+     JS toggles display and fills the count. Lives inside table-region so it
+     reappears correctly after every htmx swap (selection itself is cleared on
+     swap — see app.js). #}
+  <div id="bulk-bar" class="bulk-bar" style="display:none">
+    <span class="bulk-count">0 selected</span>
+    <button type="button" class="btn ghost tiny" onclick="Sentinel.clearSelection()">Clear</button>
+    <span class="bulk-hint">Right-click a selected row for bulk actions</span>
+  </div>
   <div class="tbl-scroll">
   <table class="findings">
     <thead>
       <tr>
+        <th class="sel-col"><input type="checkbox" class="select-all" aria-label="Select all"
+             onchange="Sentinel.selectAll(this.checked)"></th>
         {% for col in columns if col.key in colset %}
           {% if col.sortable %}
           <th class="sortable {{ 'num' if col.key == 'risk' }}"
-              onclick="setSort('{{ col.key }}', event.shiftKey)">
+              onclick="Sentinel.setSort('{{ col.key }}', event.shiftKey)">
             {{ col.label }}{{ sort_arrow(col.key) }}
           </th>
           {% else %}
           <th>{{ col.label }}</th>
           {% endif %}
         {% endfor %}
+        <th class="menu-col"></th>
       </tr>
     </thead>
     <tbody>
       {% for f in result.rows %}
       <tr hx-get="{{ url_for('web.finding_drawer', group_id=f.group_id) }}"
-          hx-target="#drawer" hx-swap="innerHTML" hx-push-url="true">
+          hx-target="#drawer" hx-swap="innerHTML" hx-push-url="true"
+          data-group-id="{{ f.group_id }}" data-status="{{ f.status }}"
+          data-actions='{{ available_actions(f.status) | tojson }}'
+          data-finding='{{ {
+            "title": f.title, "principal": f.principal_uid, "category": f.category,
+            "check_id": f.check_id, "risk": f.risk_score, "severity": f.severity,
+            "recommendation": f.recommendation, "remediation": f.remediation_snippet,
+          } | tojson }}'
+          oncontextmenu="return Sentinel.onRowContextMenu(event, this)">
+        <td class="sel-col" onclick="event.stopPropagation()">
+          <input type="checkbox" class="row-select" aria-label="Select row"
+                 onclick="Sentinel.onCheckboxClick(event, this)">
+        </td>
         {% for col in columns if col.key in colset %}
           {% if col.key == 'risk' %}
             <td class="num"><span class="risk {{ sev_class.get(f.severity, 'r-low') }}">{{ f.risk_score }}</span></td>
@@ -103,6 +131,10 @@
             <td class="mono">{{ f.check_id }}</td>
           {% endif %}
         {% endfor %}
+        <td class="menu-col" onclick="event.stopPropagation()">
+          <button type="button" class="icon-btn menu-trigger" aria-label="Open menu"
+                  onclick="Sentinel.onMenuButtonClick(event, this.closest('tr'))">⋯</button>
+        </td>
       </tr>
       {% endfor %}
     </tbody>

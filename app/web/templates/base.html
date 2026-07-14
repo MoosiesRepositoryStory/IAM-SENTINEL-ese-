@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
   <script defer src="{{ url_for('static', filename='vendor/alpine.min.js') }}"></script>
   <script src="{{ url_for('static', filename='vendor/htmx.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
   <script>
     // Our drawer routes (transition/comment/suppress/accept-risk) return a
     // non-2xx status on validation failure (bad reason, invalid transition) so
@@ -53,7 +54,8 @@
   <header class="topbar">
     <div class="crumb">{% block crumb %}<b>Findings</b>{% endblock %}</div>
     <div class="topbar-right">
-      <button class="icon-btn" title="Command palette (⌘K)" aria-label="Command palette">⌘</button>
+      <button class="icon-btn" title="Command palette (⌘K)" aria-label="Command palette"
+              onclick="Sentinel.openPalette()">⌘</button>
       <button class="icon-btn" @click="toggle()" :title="mode === 'dark' ? 'Switch to light' : 'Switch to dark'" aria-label="Toggle theme">
         <span x-text="mode === 'dark' ? '☀' : '☾'"></span>
       </button>
@@ -64,5 +66,60 @@
     {% block main %}{% endblock %}
   </main>
 </div>
+
+<!-- Command palette (§8.5) — persistent across pages, opened via Cmd/Ctrl+K
+     or the topbar button. Static Navigate/Actions items filter client-side;
+     the Findings section is htmx-searched server-side as you type. -->
+<div id="palette" class="palette-overlay" style="display:none"
+     onclick="if (event.target === this) Sentinel.closePalette()">
+  <div class="palette-panel" role="dialog" aria-label="Command palette">
+    <label class="palette-search">
+      <span class="ico">⌕</span>
+      <input id="palette-input" name="q" type="text" autocomplete="off"
+             placeholder="Type a command or search findings…"
+             oninput="Sentinel.onPaletteInput(event)"
+             hx-get="{{ url_for('web.palette_search') }}" hx-trigger="keyup changed delay:200ms"
+             hx-target="#palette-results" hx-swap="innerHTML" hx-include="this">
+    </label>
+    <div id="palette-list" class="palette-list">
+      <div id="palette-static"></div>
+      <div id="palette-results"></div>
+    </div>
+    <div class="palette-foot">↑↓ navigate · Enter select · Esc close</div>
+  </div>
+</div>
+
+<!-- Keyboard shortcut cheat sheet (§8.6, "?" toggles). -->
+<div id="cheatsheet" class="cheatsheet-overlay" style="display:none"
+     onclick="if (event.target === this) Sentinel.toggleCheatsheet()">
+  <div class="cheatsheet-panel" role="dialog" aria-label="Keyboard shortcuts">
+    <div class="cheatsheet-head">
+      <b>Keyboard shortcuts</b>
+      <button class="icon-btn" aria-label="Close" onclick="Sentinel.toggleCheatsheet()">✕</button>
+    </div>
+    <div class="cheatsheet-grid">
+      <div><kbd>⌘/Ctrl K</kbd><span>Command palette</span></div>
+      <div><kbd>/</kbd><span>Focus search</span></div>
+      <div><kbd>g</kbd> <kbd>f</kbd><span>Go to Findings</span></div>
+      <div><kbd>j</kbd> / <kbd>k</kbd><span>Move focus down / up</span></div>
+      <div><kbd>x</kbd><span>Toggle row selection</span></div>
+      <div><kbd>Shift</kbd> <kbd>j/k</kbd><span>Extend selection</span></div>
+      <div><kbd>Enter</kbd> / <kbd>o</kbd><span>Open focused finding</span></div>
+      <div><kbd>e</kbd><span>Mark Resolved</span></div>
+      <div><kbd>i</kbd><span>Mark Investigating</span></div>
+      <div><kbd>a</kbd><span>Assign to me</span></div>
+      <div><kbd>s</kbd><span>Suppress</span></div>
+      <div><kbd>c</kbd><span>Add comment</span></div>
+      <div><kbd>.</kbd><span>Open context menu</span></div>
+      <div><kbd>[</kbd> / <kbd>]</kbd><span>Previous / next finding (drawer open)</span></div>
+      <div><kbd>t</kbd><span>Toggle theme</span></div>
+      <div><kbd>?</kbd><span>This cheat sheet</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast region (§8.4) — server-rendered bulk-action toasts arrive via an
+     htmx out-of-band swap; client-only toasts (e.g. "Copied") use Sentinel.toast. -->
+<div id="toast-region"></div>
 </body>
 </html>

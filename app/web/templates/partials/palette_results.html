@@ -1,0 +1,18 @@
+{# Command palette search results (§8.5). Reuses the exact drawer deep-link
+   route findings_table.html rows already use — selecting a result opens the
+   finding drawer and closes the palette. #}
+{% if rows %}
+<div class="palette-group-label">Findings</div>
+{% for f in rows %}
+<div class="palette-item" role="option" tabindex="-1"
+     hx-get="{{ url_for('web.finding_drawer', group_id=f.group_id) }}"
+     hx-target="#drawer" hx-swap="innerHTML" hx-push-url="true"
+     onclick="Sentinel.closePalette()">
+  <span class="pi-ico">◈</span>
+  <span class="pi-label">{{ f.title }}</span>
+  <span class="pi-meta mono">{{ f.principal_uid or '' }}</span>
+</div>
+{% endfor %}
+{% else %}
+<div class="palette-empty">No findings match</div>
+{% endif %}

@@ -64,7 +64,7 @@
       <label class="opt">
         <input type="checkbox"
                {{ 'checked' if col.key in selected_cols }}
-               onchange="toggleColumn('{{ col.key }}', this.checked)">
+               onchange="Sentinel.toggleColumn('{{ col.key }}', this.checked)">
         {{ col.label }}
       </label>
       {% endfor %}
@@ -86,50 +86,10 @@
      hx-trigger="load" hx-target="#drawer" hx-swap="innerHTML"{% endif %}></div>
 
 <script>
-  // Sorting: header buttons mutate #sortField then fire a custom event the form
-  // listens for. Shift-click appends to a multi-column sort; plain click replaces.
-  function setSort(key, additive) {
-    const field = document.getElementById('sortField');
-    let parts = field.value ? field.value.split(',').filter(Boolean) : [];
-    const idx = parts.findIndex(p => p.replace(/^-/, '') === key);
-    let next;
-    if (idx === -1) {
-      next = key; // new column, ascending... but risk-like feel: default desc
-      next = '-' + key;
-    } else {
-      const cur = parts[idx];
-      next = cur.startsWith('-') ? key : '-' + key; // toggle dir
-    }
-    if (additive) {
-      if (idx === -1) parts.push(next); else parts[idx] = next;
-    } else {
-      parts = [next];
-    }
-    field.value = parts.join(',');
-    field.dispatchEvent(new Event('sort-changed', { bubbles: true }));
-  }
-
-  // Column toggle: keep the master COLUMNS order, filter to checked keys.
-  const COLUMN_ORDER = {{ columns | map(attribute='key') | list | tojson }};
-  function toggleColumn(key, on) {
-    const field = document.getElementById('colsField');
-    const set = new Set(field.value.split(',').filter(Boolean));
-    if (on) set.add(key); else set.delete(key);
-    field.value = COLUMN_ORDER.filter(k => set.has(k)).join(',');
-    field.dispatchEvent(new Event('change', { bubbles: true }));
-  }
-
-  // ---- Detail drawer (plain JS so it survives htmx-injected content) ----
-  function closeDrawer() { document.getElementById('drawer').innerHTML = ''; }
-  function drawerTab(btn, name) {
-    const panel = btn.closest('.drawer-panel');
-    panel.querySelectorAll('.drawer-tab').forEach(t => t.classList.toggle('on', t === btn));
-    panel.querySelectorAll('[data-tab]').forEach(p => {
-      p.style.display = p.dataset.tab === name ? '' : 'none';
-    });
-  }
-  document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && document.getElementById('drawer').innerHTML.trim()) closeDrawer();
-  });
+  // Sort/column/drawer/context-menu/palette/keyboard-shortcut logic all lives in
+  // static/js/app.js (Sentinel) so it works independent of htmx-swapped content.
+  // The one piece that has to be templated per-page is the column order, since
+  // it comes from the server-side COLUMNS list (§8.2's "Columns" menu order).
+  Sentinel.setColumnOrder({{ columns | map(attribute='key') | list | tojson }});
 </script>
 {% endblock %}
