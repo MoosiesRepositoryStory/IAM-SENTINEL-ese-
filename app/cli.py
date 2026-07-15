@@ -49,9 +49,16 @@ def list_checks() -> None:
 
 @cli.command("scan")
 @click.option("--name", default="CLI Scan", help="Account name to create/scan.")
-@click.option("--inventory", type=click.Path(exists=True), help="Users CSV path.")
-@click.option("--policies", type=click.Path(exists=True), help="Policies JSON path.")
-@click.option("--logs", type=click.Path(exists=True), help="Auth/CloudTrail log path.")
+@click.option(
+    "--source",
+    type=click.Choice(["file", "moto_aws"]),
+    default="file",
+    show_default=True,
+    help="Ingestion source: local files, or the simulated 'Acme Corp' moto AWS org.",
+)
+@click.option("--inventory", type=click.Path(exists=True), help="Users CSV path (file source).")
+@click.option("--policies", type=click.Path(exists=True), help="Policies JSON path (file source).")
+@click.option("--logs", type=click.Path(exists=True), help="Auth/CloudTrail log path (file source).")
 @click.option("--inactivity-days", default=90, show_default=True)
 @click.option("--password-age-days", default=90, show_default=True)
 @click.option("--key-age-days", default=90, show_default=True)
@@ -59,6 +66,7 @@ def list_checks() -> None:
 @click.option("-o", "--output", type=click.Path(), help="Write a JSON report to this path.")
 def scan(
     name: str,
+    source: str,
     inventory: str | None,
     policies: str | None,
     logs: str | None,
@@ -68,8 +76,12 @@ def scan(
     failed_logins: int,
     output: str | None,
 ) -> None:
-    """Run a scan against local files and print a findings summary."""
-    if not any([inventory, policies, logs]):
+    """Run a scan and print a findings summary.
+
+    ``--source file`` (default) scans the CSV/JSON/log paths; ``--source moto_aws``
+    scans a genuine-boto3 read of the simulated Acme org (no files needed).
+    """
+    if source == "file" and not any([inventory, policies, logs]):
         raise click.UsageError("Provide at least one of --inventory / --policies / --logs.")
 
     create_all()
@@ -79,16 +91,15 @@ def scan(
         key_age_days=key_age_days,
         failed_logins=failed_logins,
     )
-    source_config = {
-        "inventory_path": inventory,
-        "policies_path": policies,
-        "logs_path": logs,
-        **thresholds.to_dict(),
-    }
+    source_config: dict[str, object] = {**thresholds.to_dict()}
+    if source == "file":
+        source_config.update(
+            inventory_path=inventory, policies_path=policies, logs_path=logs
+        )
 
     with session_scope() as session:
         account = create_account(
-            session, name=name, source_type="file", source_config=source_config
+            session, name=name, source_type=source, source_config=source_config
         )
         run = run_scan(session, account.id, thresholds=thresholds)
         run_id = run.id

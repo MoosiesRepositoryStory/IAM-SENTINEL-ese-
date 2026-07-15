@@ -1,0 +1,29 @@
+{"eventTime":"2026-06-01T08:14:02Z","eventName":"ConsoleLogin","eventSource":"signin.amazonaws.com","sourceIPAddress":"198.51.100.20","userIdentity":{"userName":"alice"},"responseElements":{"ConsoleLogin":"Success"}}
+{"eventTime":"2026-06-01T08:20:41Z","eventName":"ConsoleLogin","eventSource":"signin.amazonaws.com","sourceIPAddress":"203.0.113.9","userIdentity":{"userName":"intern"},"responseElements":{"ConsoleLogin":"Failure"}}
+{"eventTime":"2026-06-01T08:21:03Z","eventName":"ConsoleLogin","eventSource":"signin.amazonaws.com","sourceIPAddress":"203.0.113.9","userIdentity":{"userName":"intern"},"responseElements":{"ConsoleLogin":"Failure"}}
+{"eventTime":"2026-06-01T08:21:29Z","eventName":"ConsoleLogin","eventSource":"signin.amazonaws.com","sourceIPAddress":"203.0.113.9","userIdentity":{"userName":"intern"},"responseElements":{"ConsoleLogin":"Failure"}}
+{"eventTime":"2026-06-01T08:22:10Z","eventName":"ConsoleLogin","eventSource":"signin.amazonaws.com","sourceIPAddress":"203.0.113.9","userIdentity":{"userName":"intern"},"responseElements":{"ConsoleLogin":"Failure"}}
+{"eventTime":"2026-06-01T08:22:55Z","eventName":"ConsoleLogin","eventSource":"signin.amazonaws.com","sourceIPAddress":"203.0.113.9","userIdentity":{"userName":"intern"},"responseElements":{"ConsoleLogin":"Failure"}}
+{"eventTime":"2026-06-01T08:23:40Z","eventName":"ConsoleLogin","eventSource":"signin.amazonaws.com","sourceIPAddress":"203.0.113.9","userIdentity":{"userName":"intern"},"responseElements":{"ConsoleLogin":"Failure"}}
+{"eventTime":"2026-06-01T08:25:12Z","eventName":"ConsoleLogin","eventSource":"signin.amazonaws.com","sourceIPAddress":"198.51.100.7","userIdentity":{"userName":"bob"},"responseElements":{"ConsoleLogin":"Success"}}
+{"eventTime":"2026-06-02T02:11:44Z","eventName":"ConsoleLogin","eventSource":"signin.amazonaws.com","sourceIPAddress":"10.0.0.42","userIdentity":{"userName":"ci-deploy"},"responseElements":{"ConsoleLogin":"Success"}}
+{"eventTime":"2026-06-02T09:03:19Z","eventName":"GetObject","eventSource":"s3.amazonaws.com","sourceIPAddress":"198.51.100.20","userIdentity":{"userName":"alice"}}
+{"eventTime":"2026-06-02T09:04:55Z","eventName":"ListBucket","eventSource":"s3.amazonaws.com","sourceIPAddress":"198.51.100.20","userIdentity":{"userName":"alice"}}
+{"eventTime":"2026-06-03T11:32:00Z","eventName":"AssumeRole","eventSource":"sts.amazonaws.com","sourceIPAddress":"10.0.0.42","userIdentity":{"userName":"ci-deploy"}}
+{"eventTime":"2026-06-03T11:45:07Z","eventName":"GetObject","eventSource":"s3.amazonaws.com","sourceIPAddress":"10.0.0.55","userIdentity":{"userName":"dave"}}
+{"eventTime":"2026-06-04T14:05:00Z","eventName":"AssumeRole","eventSource":"sts.amazonaws.com","sourceIPAddress":"10.0.0.42","userIdentity":{"userName":"ci-deploy"}}
+{"eventTime":"2026-06-05T09:30:12Z","eventName":"CreateUser","eventSource":"iam.amazonaws.com","sourceIPAddress":"203.0.113.9","userIdentity":{"userName":"intern"},"errorCode":"AccessDenied","errorMessage":"User is not authorized to perform iam:CreateUser"}
+{"eventTime":"2026-06-05T09:31:48Z","eventName":"CreateAccessKey","eventSource":"iam.amazonaws.com","sourceIPAddress":"203.0.113.9","userIdentity":{"userName":"intern"},"errorCode":"AccessDenied","errorMessage":"User is not authorized to perform iam:CreateAccessKey"}
+{"eventTime":"2026-06-06T16:44:00Z","eventName":"GetObject","eventSource":"s3.amazonaws.com","sourceIPAddress":"198.51.100.20","userIdentity":{"userName":"alice"}}
+{"eventTime":"2026-06-08T10:15:33Z","eventName":"AssumeRole","eventSource":"sts.amazonaws.com","sourceIPAddress":"10.0.0.55","userIdentity":{"userName":"dave"}}
+{"eventTime":"2026-06-10T13:22:41Z","eventName":"GetObject","eventSource":"s3.amazonaws.com","sourceIPAddress":"10.0.0.55","userIdentity":{"userName":"dave"}}
+{"eventTime":"2026-06-12T08:02:17Z","eventName":"ConsoleLogin","eventSource":"signin.amazonaws.com","sourceIPAddress":"198.51.100.20","userIdentity":{"userName":"alice"},"responseElements":{"ConsoleLogin":"Success"}}
+{"eventTime":"2026-06-14T22:47:59Z","eventName":"AssumeRole","eventSource":"sts.amazonaws.com","sourceIPAddress":"10.0.0.42","userIdentity":{"userName":"ci-deploy"}}
+{"eventTime":"2026-06-15T07:55:03Z","eventName":"ConsoleLogin","eventSource":"signin.amazonaws.com","sourceIPAddress":"198.51.100.7","userIdentity":{"userName":"bob"},"responseElements":{"ConsoleLogin":"Success"}}
+{"eventTime":"2026-06-18T12:10:44Z","eventName":"GetObject","eventSource":"s3.amazonaws.com","sourceIPAddress":"10.0.0.55","userIdentity":{"userName":"dave"}}
+{"eventTime":"2026-06-20T09:00:00Z","eventName":"ConsoleLogin","eventSource":"signin.amazonaws.com","sourceIPAddress":"203.0.113.9","userIdentity":{"userName":"intern"},"responseElements":{"ConsoleLogin":"Success"}}
+{"eventTime":"2026-06-22T15:38:21Z","eventName":"AssumeRole","eventSource":"sts.amazonaws.com","sourceIPAddress":"10.0.0.42","userIdentity":{"userName":"ci-deploy"}}
+{"eventTime":"2026-06-25T18:04:12Z","eventName":"ConsoleLogin","eventSource":"signin.amazonaws.com","sourceIPAddress":"198.51.100.20","userIdentity":{"userName":"alice"},"responseElements":{"ConsoleLogin":"Success"}}
+{"eventTime":"2026-06-28T06:19:37Z","eventName":"GetObject","eventSource":"s3.amazonaws.com","sourceIPAddress":"198.51.100.20","userIdentity":{"userName":"alice"}}
+{"eventTime":"2026-06-29T23:12:05Z","eventName":"ConsoleLogin","eventSource":"signin.amazonaws.com","sourceIPAddress":"5.44.32.11","userIdentity":{"userName":"frank"},"responseElements":{"ConsoleLogin":"Success"},"additionalEventData":{"note":"login from new geography (RU)"}}
+{"eventTime":"2026-06-30T10:00:00Z","eventName":"ConsoleLogin","eventSource":"signin.amazonaws.com","sourceIPAddress":"198.51.100.7","userIdentity":{"userName":"bob"},"responseElements":{"ConsoleLogin":"Success"}}
