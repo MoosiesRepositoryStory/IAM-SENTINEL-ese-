@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% set active_nav = 'accounts' %}
+{% block title %}Accounts · IAM Sentinel{% endblock %}
+{% block crumb %}<b>Accounts</b>{% endblock %}
+
+{% block main %}
+<div x-data="wizard">
+<div class="page-head">
+  <h1>Accounts</h1>
+  <button type="button" class="btn primary" style="margin-left:auto" @click="show = true; step = 1">+ Connect Account</button>
+</div>
+<p class="page-sub">Cloud environments connected to IAM Sentinel. Each scan snapshots identities, policies, and auth activity for analysis.</p>
+
+{% if error and not wizard_open %}<div class="wizard-error" style="margin:0 0 14px">{{ error }}</div>{% endif %}
+
+{% if rows %}
+<div class="table-wrap">
+  <div class="tbl-scroll">
+  <table class="findings accounts">
+    <thead>
+      <tr>
+        <th>Account</th>
+        <th>Source</th>
+        <th>Last scan</th>
+        <th class="num">Score</th>
+        <th class="num">Findings</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>
+          <div class="title-cell">{{ row.account.name }}</div>
+          {% if row.account.id == current_account_id %}<span class="chip on" style="margin-top:4px">Current</span>{% endif %}
+        </td>
+        <td class="mono">
+          {{ row.account.source_type }}
+          {% if row.account.source_config and row.account.source_config.get('simulated') %}
+            <span class="pi-soon" title="Maps to the simulated demo org">simulated</span>
+          {% endif %}
+        </td>
+        <td class="mono">
+          {% if row.latest_run %}
+            {{ (row.latest_run.finished_at or row.latest_run.started_at or '')[:10] or '—' }}
+            <span class="status st-{{ 'resolved' if row.latest_run.status == 'completed' else ('open' if row.latest_run.status == 'failed' else '') }}">{{ row.latest_run.status }}</span>
+          {% else %}
+            never scanned
+          {% endif %}
+        </td>
+        <td class="num">{{ row.composite_score if row.composite_score is not none else '—' }}</td>
+        <td class="num">
+          {{ row.total_findings if row.total_findings is not none else '—' }}
+          {% if row.critical_count %}<span class="pill sev-CRITICAL" style="margin-left:6px"><span class="dot"></span>{{ row.critical_count }}</span>{% endif %}
+        </td>
+        <td>
+          <form method="post" action="{{ url_for('web.rescan_account', account_id=row.account.id) }}" style="display:inline">
+            <button type="submit" class="btn ghost tiny">Scan now</button>
+          </form>
+          {% if row.account.id == current_account_id and row.latest_run %}
+          <a class="btn ghost tiny" href="{{ url_for('web.findings') }}">View findings</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% else %}
+<div class="empty">
+  <div class="big">☁</div>
+  <h2>No accounts connected</h2>
+  <p>Connect a demo environment to see IAM Sentinel in action — no real cloud account needed.</p>
+</div>
+{% endif %}
+
+<!-- Connect Account wizard (§5.3): a 3-step modal that feels like connecting a
+     real cloud account, even though "Demo environment" and "Assume Role
+     (simulated)" both transparently map to the same moto-mocked AWS org. -->
+<div class="wizard-overlay" x-show="show" x-cloak style="display:none"
+     @keydown.escape.window="show = false"
+     @click="if ($event.target === $el) show = false">
+  <form class="wizard-panel" role="dialog" aria-label="Connect account"
+        method="post" enctype="multipart/form-data"
+        action="{{ url_for('web.connect_account_route') }}" @click.stop>
+    <div class="wizard-head">
+      <b>Connect Account</b>
+      <button type="button" class="icon-btn drawer-close" aria-label="Close" @click="show = false">✕</button>
+    </div>
+
+    <div class="wizard-steps">
+      <span :class="{on: step === 1, done: step > 1}">1 · Provider</span>
+      <span :class="{on: step === 2, done: step > 2}">2 · Connection</span>
+      <span :class="{on: step === 3}">3 · Confirm</span>
+    </div>
+
+    {% if error %}<div class="wizard-error">{{ error }}</div>{% endif %}
+
+    <div class="wizard-body">
+      <!-- Step 1 — Provider. Only AWS is wired; Azure/GCP reinforce the
+           multi-cloud framing per §5.3 without implying they work. -->
+      <div x-show="step === 1">
+        <div class="provider-grid">
+          <div class="provider-card on">
+            <span class="provider-ico">▲</span><b>AWS</b>
+          </div>
+          <div class="provider-card disabled"><span class="provider-ico">◆</span><b>Azure</b><span class="pi-soon">Coming soon</span></div>
+          <div class="provider-card disabled"><span class="provider-ico">●</span><b>GCP</b><span class="pi-soon">Coming soon</span></div>
+        </div>
+        <input type="hidden" name="provider" value="aws">
+      </div>
+
+      <!-- Step 2 — Connection method. -->
+      <div x-show="step === 2">
+        <label class="method-card" :class="{on: method === 'demo'}">
+          <input type="radio" name="method" value="demo" x-model="method" class="sr-only">
+          <div class="method-head"><b>Demo environment</b><span class="pi-soon">Recommended</span></div>
+          <p>Pre-built "Acme Corp" simulated AWS org — 10 users, 6 roles, a realistic mix of clean and risky configurations. One click, no setup.</p>
+        </label>
+        <label class="method-card" :class="{on: method === 'assume_role'}">
+          <input type="radio" name="method" value="assume_role" x-model="method" class="sr-only">
+          <div class="method-head"><b>Assume Role</b><span class="pi-soon">Simulated</span></div>
+          <p>Cross-account onboarding exactly like real AWS: provide a Role ARN + External ID. Validated, then mapped to the demo org.</p>
+          <div class="method-fields" x-show="method === 'assume_role'" @click.stop>
+            <label class="wfield">
+              <span>Role ARN</span>
+              <input type="text" name="role_arn" class="text-input mono" placeholder="arn:aws:iam::123456789012:role/SentinelReadOnly"
+                     value="{{ form_values.role_arn if form_values else '' }}">
+            </label>
+            <label class="wfield">
+              <span>External ID (optional)</span>
+              <input type="text" name="external_id" class="text-input mono" placeholder="a1b2c3d4"
+                     value="{{ form_values.external_id if form_values else '' }}">
+            </label>
+          </div>
+        </label>
+        <label class="method-card" :class="{on: method === 'upload'}">
+          <input type="radio" name="method" value="upload" x-model="method" class="sr-only">
+          <div class="method-head"><b>Upload files</b></div>
+          <p>CSV user inventory, JSON policies, and/or an auth log — the original file-based path.</p>
+          <div class="method-fields" x-show="method === 'upload'" @click.stop>
+            <label class="wfield"><span>User inventory (CSV)</span><input type="file" name="inventory_file" accept=".csv"></label>
+            <label class="wfield"><span>Policies (JSON)</span><input type="file" name="policies_file" accept=".json"></label>
+            <label class="wfield"><span>Auth / CloudTrail log</span><input type="file" name="logs_file" accept=".log,.jsonl,.txt"></label>
+          </div>
+        </label>
+      </div>
+
+      <!-- Step 3 — Confirm & name. Scan schedule is deferred to Phase 2 Slice
+           5 (real APScheduler) — no UI for it yet, per the owner-approved slice plan. -->
+      <div x-show="step === 3">
+        <label class="wfield">
+          <span>Account name</span>
+          <input type="text" name="name" class="text-input" placeholder="e.g. Acme Corp Production" required
+                 value="{{ form_values.name if form_values else '' }}">
+        </label>
+        <div class="wfield-row">
+          <label class="wfield"><span>Inactivity threshold (days)</span><input type="number" name="inactivity_days" class="text-input" value="{{ default_thresholds.inactivity_days }}" min="1"></label>
+          <label class="wfield"><span>Password age threshold (days)</span><input type="number" name="password_age_days" class="text-input" value="{{ default_thresholds.password_age_days }}" min="1"></label>
+        </div>
+        <div class="wfield-row">
+          <label class="wfield"><span>Key age threshold (days)</span><input type="number" name="key_age_days" class="text-input" value="{{ default_thresholds.key_age_days }}" min="1"></label>
+          <label class="wfield"><span>Failed-login threshold</span><input type="number" name="failed_logins" class="text-input" value="{{ default_thresholds.failed_logins }}" min="1"></label>
+        </div>
+      </div>
+    </div>
+
+    <div class="wizard-foot">
+      <button type="button" class="btn ghost" x-show="step > 1" @click="step--">‹ Back</button>
+      <div style="margin-left:auto; display:flex; gap:8px">
+        <button type="button" class="btn ghost" @click="show = false">Cancel</button>
+        <button type="button" class="btn primary" x-show="step < 3" @click="step++">Next ›</button>
+        <button type="submit" class="btn primary" x-show="step === 3">Connect &amp; Scan</button>
+      </div>
+    </div>
+  </form>
+</div>
+</div>
+
+<script>
+  document.addEventListener('alpine:init', () => {
+    Alpine.data('wizard', () => ({
+      show: {{ 'true' if wizard_open else 'false' }},
+      step: {{ wizard_step | default(1) }},
+      method: {{ (form_values.method if form_values else 'demo') | tojson }},
+    }));
+  });
+</script>
+{% endblock %}

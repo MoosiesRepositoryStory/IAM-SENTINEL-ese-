@@ -7,14 +7,19 @@ never reload the shell. The ``HX-Request`` header tells them apart.
 
 from __future__ import annotations
 
-from flask import Blueprint, Response, abort, render_template, request
+from typing import cast
+
+from flask import Blueprint, Response, abort, redirect, render_template, request, url_for
 from sqlalchemy import select
 
 from app.db import session_scope
+from app.domain.records import Thresholds
 from app.models import Account, AppUser, Run
 from app.models.base import now_iso
+from app.services.account_service import list_accounts
 from app.services.bulk_service import bulk_assign, bulk_exception, bulk_transition
 from app.services.collaboration import CommentError, active_users, add_comment, assign
+from app.services.connect_service import ConnectError, connect_account
 from app.services.exception_service import (
     EXCEPTION_STATUSES,
     ExceptionError,
@@ -32,6 +37,7 @@ from app.services.finding_query import (
     query_findings,
     sort_to_query,
 )
+from app.services.scan_service import ScanError, run_scan
 from app.services.workflow_service import (
     STATUS_LABELS,
     InvalidTransition,
@@ -73,7 +79,15 @@ _DEFAULT_COLS: list[str] = [str(c["key"]) for c in COLUMNS if c["default"]]
 
 
 def _current_account(session) -> Account | None:  # noqa: ANN001
-    """Slice 1 has no account switcher yet — use the most recently created."""
+    """No account switcher exists yet (Slice 2) — "current" means the account
+    behind the most recently *completed* run (whatever was just connected or
+    re-scanned), falling back to the newest-created account if nothing has
+    been scanned yet."""
+    latest_run = session.scalar(
+        select(Run).where(Run.status == "completed").order_by(Run.id.desc())
+    )
+    if latest_run is not None:
+        return session.get(Account, latest_run.account_id)
     return session.scalar(select(Account).order_by(Account.id.desc()))
 
 
@@ -132,6 +146,132 @@ def index() -> Response | str:
 @bp.get("/findings")
 def findings() -> Response | str:
     return _render_findings(full_page=not _is_htmx())
+
+
+# -- Accounts + Connect wizard (§5.3, Slice 2) -------------------------------
+
+
+def _expunge_account_rows(session, rows) -> None:  # noqa: ANN001
+    """Detach each row's ORM instances so template access after the session
+    closes doesn't lazy-load (same discipline as ``_render_findings``)."""
+    for row in rows:
+        session.expunge(row.account)
+        if row.latest_run is not None:
+            session.expunge(row.latest_run)
+
+
+def _parse_thresholds() -> Thresholds:
+    base = Thresholds()
+
+    def _int(key: str, default: int) -> int:
+        try:
+            return int(request.form.get(key, default))
+        except (TypeError, ValueError):
+            return default
+
+    return Thresholds(
+        inactivity_days=_int("inactivity_days", base.inactivity_days),
+        password_age_days=_int("password_age_days", base.password_age_days),
+        key_age_days=_int("key_age_days", base.key_age_days),
+        failed_logins=_int("failed_logins", base.failed_logins),
+    )
+
+
+def _read_upload(field: str) -> str | None:
+    file = request.files.get(field)
+    if file is None or not file.filename:
+        return None
+    return file.read().decode("utf-8", errors="replace")
+
+
+@bp.get("/accounts")
+def accounts() -> Response | str:
+    with session_scope() as session:
+        rows = list_accounts(session)
+        current = _current_account(session)
+        current_id = current.id if current is not None else None
+        _expunge_account_rows(session, rows)
+    return render_template(
+        "accounts.html",
+        rows=rows,
+        current_account_id=current_id,
+        default_thresholds=Thresholds().to_dict(),
+    )
+
+
+@bp.post("/accounts/connect")
+def connect_account_route() -> Response | str | tuple[str, int]:
+    name = request.form.get("name", "")
+    method = request.form.get("method", "demo")
+    role_arn = request.form.get("role_arn", "")
+    external_id = request.form.get("external_id", "")
+    thresholds = _parse_thresholds()
+    with session_scope() as session:
+        actor = _current_user(session)
+        try:
+            connect_account(
+                session,
+                name=name,
+                method=method,
+                thresholds=thresholds,
+                role_arn=role_arn,
+                external_id=external_id,
+                inventory_text=_read_upload("inventory_file"),
+                policies_json=_read_upload("policies_file"),
+                logs_text=_read_upload("logs_file"),
+                actor_id=actor.id,
+            )
+        except ConnectError as exc:
+            rows = list_accounts(session)
+            current = _current_account(session)
+            current_id = current.id if current is not None else None
+            _expunge_account_rows(session, rows)
+            # Route.ARN/upload validation errors live on step 2's fields; name and
+            # scan-execution errors are only visible on step 3 — reopen wherever the
+            # bad field actually is rather than always landing on step 3.
+            msg = str(exc)
+            wizard_step = 2 if ("Role ARN" in msg or "Upload at least" in msg) else 3
+            return render_template(
+                "accounts.html",
+                rows=rows,
+                current_account_id=current_id,
+                default_thresholds=Thresholds().to_dict(),
+                error=msg,
+                wizard_open=True,
+                wizard_step=wizard_step,
+                form_values={
+                    "name": name, "method": method,
+                    "role_arn": role_arn, "external_id": external_id,
+                },
+            ), 400
+    return cast(Response, redirect(url_for("web.findings")))
+
+
+@bp.post("/accounts/<int:account_id>/scan")
+def rescan_account(account_id: int) -> Response | str | tuple[str, int]:
+    """Re-scan an existing account with its saved thresholds (§5.3 step 5's
+    "Scan now" — this is what makes ``_current_account`` point at it again)."""
+    with session_scope() as session:
+        account = session.get(Account, account_id)
+        if account is None:
+            abort(404)
+        actor = _current_user(session)
+        thresholds = Thresholds.from_dict(account.source_config or {})
+        try:
+            run_scan(session, account.id, thresholds=thresholds, triggered_by=actor.id)
+        except ScanError as exc:
+            rows = list_accounts(session)
+            current = _current_account(session)
+            current_id = current.id if current is not None else None
+            _expunge_account_rows(session, rows)
+            return render_template(
+                "accounts.html",
+                rows=rows,
+                current_account_id=current_id,
+                default_thresholds=Thresholds().to_dict(),
+                error=f"Re-scan failed: {exc}",
+            ), 400
+    return cast(Response, redirect(url_for("web.findings")))
 
 
 def _render_drawer(session, group_id: int, **extra) -> str:  # noqa: ANN001, ANN003
