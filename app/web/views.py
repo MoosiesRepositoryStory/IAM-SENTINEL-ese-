@@ -40,6 +40,7 @@ from app.services.finding_query import (
     query_findings,
     sort_to_query,
 )
+from app.services.graph_view import list_principals_by_blast, principal_graph
 from app.services.run_query import get_run_row, list_runs, score_trend
 from app.services.scan_service import enqueue_scan
 from app.services.schedule_service import (
@@ -425,6 +426,31 @@ def run_progress(run_id: int) -> Response | str:
     return render_template(
         "partials/run_row.html", row=row, current_run_id=current_run_id, highlight_id=highlight_id
     )
+
+
+# -- Blast Radius / permission graph (§6.2, Phase 3 Slice 2) ----------------
+
+
+@bp.get("/graph")
+def graph_overview() -> Response | str:
+    with session_scope() as session:
+        run_id = _current_completed_run_id(session)
+        if run_id is None:
+            return render_template("empty_state.html", reason="no_data", columns=COLUMNS)
+        rows = list_principals_by_blast(session, run_id)
+    return render_template("graph_overview.html", rows=rows)
+
+
+@bp.get("/principals/<path:principal_uid>")
+def principal_detail(principal_uid: str) -> Response | str:
+    with session_scope() as session:
+        run_id = _current_completed_run_id(session)
+        if run_id is None:
+            abort(404)
+        graph = principal_graph(session, run_id, principal_uid)
+    if graph is None:
+        abort(404)
+    return render_template("principal_graph.html", graph=graph)
 
 
 # -- Run diff view (§5.4 / §8.9, Slice 4) ------------------------------------

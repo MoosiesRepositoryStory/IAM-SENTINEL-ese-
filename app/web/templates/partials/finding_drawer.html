@@ -130,6 +130,11 @@
 
     <!-- Evidence -->
     <section data-tab="evidence" style="{{ 'display:none' if active_tab != 'evidence' }}">
+      {% if f.evidence.get('graph_path') and f.principal_uid %}
+      <a class="btn ghost tiny graph-link" href="{{ url_for('web.principal_detail', principal_uid=f.principal_uid) }}">
+        ⧉ View escalation path in blast-radius graph →
+      </a>
+      {% endif %}
       {% if f.evidence %}
         {% for key, val in f.evidence.items() %}
         <div class="ev-block">

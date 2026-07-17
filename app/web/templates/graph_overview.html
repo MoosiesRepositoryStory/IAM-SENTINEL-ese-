@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% set active_nav = 'graph' %}
+{% block title %}Blast Radius · IAM Sentinel{% endblock %}
+{% block crumb %}<b>Graph</b>{% endblock %}
+
+{% block main %}
+<div class="page-head">
+  <h1>Blast Radius</h1>
+</div>
+<p class="page-sub">Every principal's reachable-permission footprint (§6.2) — highest blast radius first. Open a principal to see its permission graph.</p>
+
+{% if rows %}
+<div class="table-wrap">
+  <div class="tbl-scroll">
+  <table class="findings">
+    <thead>
+      <tr>
+        <th>Principal</th>
+        <th>Kind</th>
+        <th class="num">Blast radius</th>
+        <th class="num">Reachable actions</th>
+        <th class="num">Sensitive</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr onclick="window.location='{{ url_for('web.principal_detail', principal_uid=row.principal_uid) }}'">
+        <td class="mono">{{ row.username or row.principal_uid }}</td>
+        <td style="text-transform:capitalize">{{ row.kind }}</td>
+        <td class="num">
+          <span class="blast-pill blast-{{ 'high' if row.blast_radius_score >= 50 else ('mid' if row.blast_radius_score >= 20 else 'low') }}">
+            {{ row.blast_radius_score }}
+          </span>
+        </td>
+        <td class="num">{{ row.reachable_actions }}</td>
+        <td class="num">{{ row.reachable_sensitive }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% else %}
+<div class="empty">
+  <div class="big">⧉</div>
+  <h2>No graph data yet</h2>
+  <p>Run a scan to build the permission graph.</p>
+</div>
+{% endif %}
+{% endblock %}

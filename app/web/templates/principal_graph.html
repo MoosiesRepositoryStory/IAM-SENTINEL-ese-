@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% set active_nav = 'graph' %}
+{% block title %}{{ graph.focus_label }} · Blast Radius · IAM Sentinel{% endblock %}
+{% block crumb %}<a href="{{ url_for('web.graph_overview') }}">Graph</a> <span class="dot-sep">/</span> <b>{{ graph.focus_label }}</b>{% endblock %}
+
+{% block main %}
+<script src="{{ url_for('static', filename='vendor/cytoscape.min.js') }}"></script>
+
+<div class="page-head">
+  <h1>{{ graph.focus_label }}</h1>
+</div>
+<p class="page-sub mono">{{ graph.focus }}</p>
+
+{% if graph.escalation_path %}
+<div class="escalation-banner">
+  <span class="ico">⚠</span>
+  <span>Escalation path to admin:
+    {% for uid in graph.escalation_path %}
+      <span class="mono">{{ uid.rsplit('/', 1)[-1] }}</span>{% if not loop.last %} <span class="path-arrow">→</span> {% endif %}
+    {% endfor %}
+  </span>
+</div>
+{% endif %}
+
+<div class="graph-layout">
+  <div id="cy" class="graph-canvas" role="img" aria-label="Permission graph for {{ graph.focus_label }}"></div>
+  <aside id="graph-side-panel" class="graph-panel">
+    <div class="graph-panel-empty">Click a node to see its details.</div>
+  </aside>
+</div>
+
+<div class="graph-legend">
+  <span><i class="legend-dot legend-principal"></i> Principal</span>
+  <span><i class="legend-dot legend-policy"></i> Policy</span>
+  <span><i class="legend-dot legend-action"></i> Action</span>
+  <span><i class="legend-dot legend-resource"></i> Resource</span>
+  <span><i class="legend-line legend-assume"></i> Can assume</span>
+  <span><i class="legend-line legend-escalate"></i> Can escalate</span>
+  <span><i class="legend-line legend-path"></i> Escalation path</span>
+</div>
+
+<script id="graph-data" type="application/json">{{ graph | tojson }}</script>
+<script src="{{ url_for('static', filename='js/graph.js') }}"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    SentinelGraph.init('cy', 'graph-data', 'graph-side-panel');
+  });
+</script>
+{% endblock %}
