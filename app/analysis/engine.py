@@ -15,6 +15,7 @@ from app.analysis import risk
 from app.analysis.graph import GraphEdge
 from app.analysis.registry import REGISTRY, ActivityIndex, CheckContext
 from app.compliance.mappings import compliance_tags_for, frameworks_for
+from app.domain import logparse
 from app.domain.records import Finding, NormalizedDataset, Thresholds
 
 
@@ -29,25 +30,40 @@ class AnalysisResult:
 
 
 def build_activity_index(dataset: NormalizedDataset) -> ActivityIndex:
-    """Map each principal -> set of actions actually observed in the logs.
+    """Derive the per-principal activity picture the least-privilege engine and
+    credential checks consume (§6.3).
 
-    An event's ``event_name`` (e.g. ``AssumeRole``) is normalized to a coarse
-    action label; the log window is the span between earliest and latest event.
+    Two things come out of one pass over ``log_events``:
+
+    - ``used_actions`` — the set of IAM ``service:Action`` strings a principal
+      *successfully* exercised, normalized from CloudTrail ``(eventSource,
+      eventName)`` so it lines up with granted actions. Sign-in events and
+      denied attempts are excluded (a denied action wasn't actually used).
+    - ``event_counts`` — every observed event for a principal (successful,
+      failed, or denied), the raw "did we see this identity at all / how much"
+      signal behind the sufficiency gate and ``is_active``.
+
+    The log window is the span between the earliest and latest event.
     """
     used: dict[str, set[str]] = {}
+    counts: dict[str, int] = {}
     timestamps = []
     for ev in dataset.log_events:
         if ev.ts is not None:
             timestamps.append(ev.ts)
-        if not ev.principal_uid or not ev.event_name:
+        if not ev.principal_uid:
             continue
-        if ev.outcome == "denied":  # denied actions were not actually exercised
+        # Any observed event (incl. failed/denied) counts as "we saw them".
+        counts[ev.principal_uid] = counts.get(ev.principal_uid, 0) + 1
+        if ev.outcome == "denied":  # attempted but not successfully exercised
             continue
-        used.setdefault(ev.principal_uid, set()).add(ev.event_name)
+        action = logparse.to_iam_action(ev.event_source, ev.event_name)
+        if action is not None:  # None = a login / unqualifiable event, not an action
+            used.setdefault(ev.principal_uid, set()).add(action)
     window_days = 0
     if len(timestamps) >= 2:
         window_days = max((max(timestamps) - min(timestamps)).days, 1)
-    return ActivityIndex(used_actions=used, window_days=window_days)
+    return ActivityIndex(used_actions=used, event_counts=counts, window_days=window_days)
 
 
 def run_analysis(dataset: NormalizedDataset, thresholds: Thresholds) -> AnalysisResult:

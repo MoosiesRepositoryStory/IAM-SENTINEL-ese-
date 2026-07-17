@@ -93,7 +93,10 @@ class UnusedActiveCredentialCheck:
             has_credential = p.console_access or p.access_key_age_days is not None
             if not has_credential:
                 continue
-            if not ctx.activity.used_by(p.principal_uid):
+            # is_active (not used_by): a login-only user has an empty used-action
+            # set but is very much active — their credential is in use. Only a
+            # principal with *zero* observed events of any kind is truly unused.
+            if not ctx.activity.is_active(p.principal_uid):
                 yield make_finding(
                     self.meta.id,
                     title=f"{p.display_name} credential unused in last "

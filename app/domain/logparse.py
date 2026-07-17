@@ -225,6 +225,38 @@ def _finalize(
     )
 
 
+# CloudTrail event names that are authentication/sign-in events, not IAM policy
+# actions — they must never appear in a granted-vs-used action diff (§6.3).
+_NON_ACTION_EVENTS: set[str] = {"ConsoleLogin", "CheckMfa", "ExitRole", "RenewRole"}
+# eventSource prefixes that don't correspond to an IAM action namespace.
+_NON_ACTION_SERVICES: set[str] = {"signin", "console"}
+
+
+def to_iam_action(event_source: str | None, event_name: str | None) -> str | None:
+    """Best-effort map a CloudTrail ``(eventSource, eventName)`` to an IAM
+    ``"service:Action"`` string, or ``None`` when the event isn't a policy
+    action we can compare against grants.
+
+    Returns ``None`` for sign-in events (``ConsoleLogin``) and for events we
+    can't qualify to a service. The service prefix is taken from ``eventSource``
+    (``s3.amazonaws.com`` -> ``s3``); this matches the IAM action namespace for
+    the vast majority of services (and all of the simulated org's), with a
+    documented handful of real-AWS exceptions (e.g. ``monitoring`` ->
+    ``cloudwatch``) not modeled here since the mock never emits them.
+    """
+    if not event_name or event_name in _NON_ACTION_EVENTS:
+        return None
+    if ":" in event_name:
+        # A plaintext log may already have written a qualified "service:Action".
+        return event_name
+    if not event_source:
+        return None
+    service = event_source.split(".")[0].strip().lower()
+    if not service or service in _NON_ACTION_SERVICES:
+        return None
+    return f"{service}:{event_name}"
+
+
 def parse_lines(lines: Iterable[str]) -> Iterator[LogEventRecord]:
     """Parse an iterable of lines, silently skipping unparseable ones."""
     for line in lines:

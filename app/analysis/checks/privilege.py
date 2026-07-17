@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from app.analysis import least_privilege
 from app.analysis.checks._util import (
     action_matches,
     grants_admin,
@@ -155,21 +156,50 @@ class UnusedGrantsCheck:
             return
         for p in ctx.dataset.principals:
             granted = principal_granted_actions(ctx, p)
-            sensitive_granted = has_sensitive(granted) - {"*"}
-            if not sensitive_granted:
+            if not has_sensitive(granted) - {"*"}:
                 continue
-            used = ctx.activity.used_by(p.principal_uid)
-            unused = {a for a in sensitive_granted if a not in used}
-            if unused and len(unused) / max(len(sensitive_granted), 1) >= 0.6:
-                yield make_finding(
-                    self.meta.id,
-                    title=f"{p.display_name} never used {len(unused)} sensitive grants",
-                    severity=self.meta.default_severity,
-                    category=self.meta.category,
-                    principal_uid=p.principal_uid,
-                    recommendation=self.meta.remediation,
-                    evidence={
-                        "unused_sensitive": sorted(unused),
-                        "window_days": ctx.activity.window_days,
-                    },
-                )
+            # Only assess identities we could actually observe acting: ones
+            # with a long-term credential (console or access key). A role with
+            # no standing credential and no CloudTrail of its own can't be
+            # honestly evaluated by an activity-based check — flagging its
+            # grants as "unused" would just be a logging gap masquerading as a
+            # finding. Its blast-radius/escalation findings still stand.
+            if not (p.console_access or p.access_key_age_days is not None):
+                continue
+
+            rec = least_privilege.recommend(
+                principal_uid=p.principal_uid,
+                granted_actions=granted,
+                policies=ctx.dataset.policies_for(p),
+                used_actions=ctx.activity.used_by(p.principal_uid),
+                event_count=ctx.activity.events_for(p.principal_uid),
+                window_days=ctx.activity.window_days,
+            )
+            if not rec.exceeds_threshold:
+                continue
+
+            n = len(rec.unused_sensitive)
+            title = (
+                f"{p.display_name} has {n} unused sensitive grant(s)"
+                if rec.confident
+                else f"{p.display_name}: {n} sensitive grant(s) with no observed use"
+            )
+            evidence: dict[str, object] = {
+                "unused_sensitive": rec.unused_sensitive,
+                "used_actions": rec.used_actions,
+                "window_days": rec.window_days,
+                "events_observed": rec.event_count,
+                "confidence": "confident" if rec.confident else "insufficient_data",
+            }
+            if rec.insufficient_reason:
+                evidence["insufficient_reason"] = rec.insufficient_reason
+            yield make_finding(
+                self.meta.id,
+                title=title,
+                severity=self.meta.default_severity,
+                category=self.meta.category,
+                principal_uid=p.principal_uid,
+                recommendation=rec.summary,
+                remediation_snippet=rec.suggested_policy_json,
+                evidence=evidence,
+            )

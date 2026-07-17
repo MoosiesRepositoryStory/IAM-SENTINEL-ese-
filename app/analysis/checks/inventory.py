@@ -26,7 +26,10 @@ class OrphanedPrincipalCheck:
         for p in ctx.dataset.principals:
             if p.attached_policy_uids:
                 continue
-            if ctx.activity.used_by(p.principal_uid):
+            # is_active covers login-only identities too (see credential.py):
+            # a principal that logged in but has no policy actions is not
+            # "orphaned," it's just unprivileged.
+            if ctx.activity.is_active(p.principal_uid):
                 continue
             yield make_finding(
                 self.meta.id,

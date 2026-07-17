@@ -101,19 +101,23 @@ def test_seed_is_deterministic_identical_fingerprints() -> None:
 
 
 def test_baseline_finding_count_and_severity_mix() -> None:
-    """Pins the documented clean-run baseline (Slice 1: 49 findings, 7 crit/17
-    high/20 med/5 low) so a wildcard-matching regression in a shared helper —
-    e.g. one that silently stops recognizing a principal's "*" or "iam:*"
-    grant as covering a concrete action like iam:PassRole — gets caught here
-    instead of only by a manual count comparison. This bit a Phase 3 Slice 1
-    refactor of the PassRole-escalation action matcher, which the loose
-    ``len(findings) > 20`` / check-id-only assertions elsewhere in this file
-    didn't catch: it silently dropped bob/frank/ci-deploy/CI-Deploy-role/
-    Break-Glass's CRITICAL escalation findings (49 -> 44, 7 crit -> 2)."""
+    """Pins the documented clean-run baseline so a wildcard-matching or
+    action-namespace regression in a shared helper gets caught here rather than
+    only by a manual count comparison.
+
+    **44 findings [7 crit / 17 high / 15 med / 5 low] as of Phase 3 Slice 3.**
+    Down from Slice 1/2's 49 [7/17/20/5]: Slice 3 fixed a latent bug where
+    ``UnusedGrantsCheck`` compared IAM-format grants ("s3:GetObject") against
+    raw CloudTrail event names ("GetObject"), which never matched, so it fired
+    for *every* principal with a sensitive grant regardless of real use. With
+    the namespace fixed + a credential gate, the 8 unused_grants findings
+    become 3 (intern confident, carol/svc-metrics insufficient) — alice/dave
+    correctly drop (they use their grants) and the three credential-less roles
+    drop (an activity check can't honestly assess them). Net -5 MEDIUM."""
     result = run_analysis(_fetch(), Thresholds())
     counts = Counter(f.severity.value for f in result.findings)
-    assert len(result.findings) == 49
-    assert dict(counts) == {"LOW": 5, "MEDIUM": 20, "HIGH": 17, "CRITICAL": 7}
+    assert len(result.findings) == 44
+    assert dict(counts) == {"LOW": 5, "MEDIUM": 15, "HIGH": 17, "CRITICAL": 7}
 
 
 def test_planted_anomalies_surface() -> None:
@@ -132,6 +136,45 @@ def test_planted_anomalies_surface() -> None:
         "log.service_interactive_login",  # ci-deploy console login
     ):
         assert expected in check_ids, f"missing planted finding: {expected}"
+
+
+def test_least_privilege_recommendations_over_real_log_data() -> None:
+    """Both the confident and insufficient-data paths surface off the real
+    moto CloudTrail: intern used none of its granted actions (plenty of events
+    → confident, concrete suggested policy), while carol has zero observed
+    activity (→ insufficient, no policy, flagged)."""
+    import json
+
+    findings = run_analysis(_fetch(), Thresholds()).findings
+    lp = {
+        f.principal_uid.rsplit("/", 1)[-1]: f
+        for f in findings
+        if f.check_id == "iam.least_privilege.unused_grants"
+    }
+
+    # Confident: intern, with an actual (empty = revoke) suggested policy doc.
+    intern = lp["intern"]
+    assert intern.evidence["confidence"] == "confident"
+    assert intern.remediation_snippet is not None
+    assert json.loads(intern.remediation_snippet)["Statement"] == []
+    assert set(intern.evidence["unused_sensitive"]) == {
+        "iam:PassRole",
+        "iam:CreateAccessKey",
+        "iam:AttachUserPolicy",
+    }
+
+    # Insufficient: carol has zero activity, so no confident policy is offered.
+    carol = lp["carol"]
+    assert carol.evidence["confidence"] == "insufficient_data"
+    assert carol.remediation_snippet is None
+    assert "insufficient" in carol.evidence["insufficient_reason"].lower()
+
+    # Principals who actually use their grants are NOT flagged (the namespace
+    # fix): alice uses s3:GetObject, dave uses s3:GetObject + sts:AssumeRole.
+    assert "alice" not in lp
+    assert "dave" not in lp
+    # Credential-less roles aren't assessed by the activity check.
+    assert "Vendor-Access" not in lp and "ReadOnly-Role" not in lp
 
 
 def test_scan_moto_account_end_to_end(db_session) -> None:

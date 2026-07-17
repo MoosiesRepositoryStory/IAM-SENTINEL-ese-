@@ -32,15 +32,32 @@ class CheckMeta:
 class ActivityIndex:
     """Actions actually observed per principal, derived from log events.
 
-    Populated in Phase 3's least-privilege engine; an empty index is valid and
-    simply means activity-based checks emit nothing.
+    ``used_actions`` holds normalized IAM ``service:Action`` strings (sign-in
+    events and denied attempts excluded), so it's directly comparable to a
+    principal's *granted* actions for the least-privilege diff (§6.3).
+    ``event_counts`` holds the total number of observed events per principal —
+    including logins and denied attempts, i.e. any evidence the principal was
+    actually captured in the logs — and drives both the "is this identity
+    active at all?" signal and the recommendation-sufficiency gate. An empty
+    index is valid and simply means activity-based checks emit nothing.
     """
 
     used_actions: dict[str, set[str]] = field(default_factory=dict)
+    event_counts: dict[str, int] = field(default_factory=dict)
     window_days: int = 0
 
     def used_by(self, principal_uid: str) -> set[str]:
         return self.used_actions.get(principal_uid, set())
+
+    def events_for(self, principal_uid: str) -> int:
+        return self.event_counts.get(principal_uid, 0)
+
+    def is_active(self, principal_uid: str) -> bool:
+        """Whether we observed *any* activity for this principal (a successful
+        API call, a login, or even a denied attempt — all mean the identity is
+        live). Distinct from ``used_by`` emptiness: a login-only user is active
+        but has no *policy actions* used."""
+        return self.events_for(principal_uid) > 0
 
 
 @dataclass

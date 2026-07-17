@@ -156,13 +156,30 @@
 
     <!-- Remediation -->
     <section data-tab="remediation" style="{{ 'display:none' if active_tab != 'remediation' }}">
+      {# Least-privilege findings carry a data-confidence signal so the
+         recommendation is never mistaken for authoritative off sparse logs
+         (§6.3). Contained to checks that set it; other checks are unaffected. #}
+      {% set confidence = f.evidence.get('confidence') %}
+      {% if confidence %}
+      <div class="lp-confidence lp-{{ confidence }}">
+        {% if confidence == 'confident' %}
+          <span class="lp-ico">✓</span>
+          <span>Based on <b>{{ f.evidence.get('window_days') }} days</b> of activity
+            ({{ f.evidence.get('events_observed') }} events observed)</span>
+        {% else %}
+          <span class="lp-ico">⚠</span>
+          <span>Low confidence — {{ f.evidence.get('insufficient_reason') }}</span>
+        {% endif %}
+      </div>
+      {% endif %}
       {% if f.recommendation %}<p class="reco">{{ f.recommendation }}</p>{% endif %}
       {% if f.remediation_snippet %}
       <div class="snippet">
-        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.nextElementSibling.innerText); this.textContent='Copied'">Copy</button>
+        {% if confidence %}<div class="snippet-label">Suggested least-privilege policy</div>{% endif %}
+        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('pre').innerText); this.textContent='Copied'">Copy</button>
         <pre class="code">{{ f.remediation_snippet }}</pre>
       </div>
-      {% else %}
+      {% elif not confidence %}
       <p class="muted">No remediation snippet for this check.</p>
       {% endif %}
     </section>
