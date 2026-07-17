@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% set active_nav = 'runs' %}
+{% block title %}Run diff · IAM Sentinel{% endblock %}
+{% block crumb %}<a href="{{ url_for('web.runs') }}">Runs</a> · <b>Diff</b>{% endblock %}
+
+{% block main %}
+<div class="page-head"><h1>Run diff</h1></div>
+<p class="page-sub">What changed between two scans of {{ account.name }} — computed on demand from each run's stored findings.</p>
+
+{% if error %}<div class="wizard-error">{{ error }}</div>{% endif %}
+
+{% if not d %}
+  <div class="empty">
+    <div class="big">⇄</div>
+    <h2>Nothing to compare yet</h2>
+    <p>A diff needs two completed scans of the same account. Run another scan and the drift will show up here.</p>
+    <p style="margin-top:12px"><a class="btn primary" href="{{ url_for('web.accounts') }}">Go to Accounts</a></p>
+  </div>
+{% else %}
+
+<!-- Run picker: any two runs of this account. Changing either re-navigates
+     with the new ?a=&b= so the diff stays a plain, linkable GET. -->
+<form class="diff-picker" method="get" action="{{ url_for('web.runs_diff') }}">
+  <label class="wfield">
+    <span>Run A (baseline)</span>
+    <select name="a" class="text-input" onchange="this.form.submit()">
+      {% for row in runs %}
+        {% if row.run.status == 'completed' %}
+        <option value="{{ row.run.id }}" {{ 'selected' if row.run.id == d.run_a.id }}>
+          #{{ row.run.id }} · {{ (row.run.finished_at or '')[:16] }}{% if row.run.composite_score is not none %} · score {{ row.run.composite_score }}{% endif %}
+        </option>
+        {% endif %}
+      {% endfor %}
+    </select>
+  </label>
+  <span class="diff-vs">vs</span>
+  <label class="wfield">
+    <span>Run B (compared)</span>
+    <select name="b" class="text-input" onchange="this.form.submit()">
+      {% for row in runs %}
+        {% if row.run.status == 'completed' %}
+        <option value="{{ row.run.id }}" {{ 'selected' if row.run.id == d.run_b.id }}>
+          #{{ row.run.id }} · {{ (row.run.finished_at or '')[:16] }}{% if row.run.composite_score is not none %} · score {{ row.run.composite_score }}{% endif %}
+        </option>
+        {% endif %}
+      {% endfor %}
+    </select>
+  </label>
+
+  {% if trend and trend | length > 1 %}
+  <!-- Score trend sparkline (§8.9). Plain inline SVG on a fixed 0-100 y-axis;
+       see views._sparkline_points for why the geometry is computed server-side. -->
+  <div class="spark-wrap" title="Composite score across the last {{ trend | length }} completed runs (0-100)">
+    <span class="spark-label">Score trend</span>
+    <svg class="spark" viewBox="0 0 160 32" preserveAspectRatio="none" role="img"
+         aria-label="Score trend across {{ trend | length }} runs, {{ trend[0].score }} to {{ trend[-1].score }} out of 100">
+      <polyline points="{{ spark_points }}" fill="none" stroke="currentColor" stroke-width="1.5"
+                stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+    </svg>
+    <span class="spark-ends mono">{{ trend[0].score }}→{{ trend[-1].score }}</span>
+  </div>
+  {% endif %}
+</form>
+
+<!-- Summary banner (§8.9): "+5 new · -3 resolved · 12 unchanged · net risk +18 · score 74 -> 68" -->
+<div class="diff-banner">
+  <span class="db-stat new"><b>+{{ d.new_count }}</b> new</span>
+  <span class="db-stat changed"><b>{{ d.changed_count }}</b> changed</span>
+  <span class="db-stat resolved"><b>-{{ d.resolved_count }}</b> resolved</span>
+  <span class="db-stat muted"><b>{{ d.unchanged_count }}</b> unchanged</span>
+  <span class="db-sep"></span>
+  <span class="db-stat {{ 'up' if d.net_risk > 0 else ('down' if d.net_risk < 0 else 'muted') }}">
+    net risk <b>{{ '+' if d.net_risk > 0 }}{{ d.net_risk }}</b>
+  </span>
+  {% if d.score_before is not none and d.score_after is not none %}
+  <span class="db-stat {{ 'down' if d.score_delta < 0 else ('up-good' if d.score_delta > 0 else 'muted') }}">
+    score <b>{{ d.score_before }} → {{ d.score_after }}</b>
+    {% if d.score_delta %}({{ '+' if d.score_delta > 0 }}{{ d.score_delta }}){% endif %}
+  </span>
+  {% endif %}
+  <span class="db-runs mono">run #{{ d.run_a.id }} → #{{ d.run_b.id }}</span>
+</div>
+
+{% if d.is_empty %}
+  <div class="empty">
+    <div class="big">=</div>
+    <h2>No drift between these runs</h2>
+    <p>All {{ d.unchanged_count }} findings are identical across run #{{ d.run_a.id }} and #{{ d.run_b.id }}.</p>
+  </div>
+{% else %}
+<!-- Three-column board (§8.9). Each column scrolls independently so a long
+     New column can't push Resolved off the fold. -->
+<div class="diff-board">
+  {% macro column(key, label, hint, cards) %}
+  <section class="diff-col diff-{{ key }}" aria-label="{{ label }}">
+    <header class="dcol-head">
+      <b>{{ label }}</b>
+      <span class="dcol-count">{{ cards | length }}</span>
+      <span class="dcol-hint">{{ hint }}</span>
+    </header>
+    <div class="dcol-body">
+      {% for c in cards %}
+        {% include "partials/diff_card.html" %}
+      {% else %}
+        <p class="dcol-empty">None</p>
+      {% endfor %}
+    </div>
+  </section>
+  {% endmacro %}
+
+  {{ column('new', 'New', 'Appeared in run #' ~ d.run_b.id, d.new) }}
+  {{ column('changed', 'Changed', 'Still present, but different', d.changed) }}
+  {{ column('resolved', 'Resolved', 'Gone since run #' ~ d.run_a.id, d.resolved) }}
+</div>
+{% endif %}
+{% endif %}
+
+<!-- Same drawer mount the findings page uses; cards call Sentinel.openDrawer. -->
+<div id="drawer"></div>
+{% endblock %}

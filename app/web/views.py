@@ -7,6 +7,7 @@ never reload the shell. The ``HX-Request`` header tells them apart.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import cast
 
 from flask import Blueprint, Response, abort, redirect, render_template, request, url_for
@@ -20,6 +21,7 @@ from app.services.account_service import list_accounts
 from app.services.bulk_service import bulk_assign, bulk_exception, bulk_transition
 from app.services.collaboration import CommentError, active_users, add_comment, assign
 from app.services.connect_service import ConnectError, connect_account
+from app.services.diff_service import DiffError, default_diff_pair, diff
 from app.services.exception_service import (
     EXCEPTION_STATUSES,
     ExceptionError,
@@ -37,7 +39,7 @@ from app.services.finding_query import (
     query_findings,
     sort_to_query,
 )
-from app.services.run_query import get_run_row, list_runs
+from app.services.run_query import get_run_row, list_runs, score_trend
 from app.services.scan_service import enqueue_scan
 from app.services.workflow_service import (
     STATUS_LABELS,
@@ -285,11 +287,19 @@ def runs() -> Response | str:
     with session_scope() as session:
         rows = list_runs(session)
         current_run_id = _current_completed_run_id(session)
+        account = _current_account(session)
+        # Gate the "Compare" button on a diffable pair actually existing, so it
+        # can't lead to the "nothing to compare yet" dead end (§8.9 entry point).
+        can_compare = account is not None and default_diff_pair(session, account.id) is not None
         for row in rows:
             session.expunge(row.run)
     highlight_id = request.args.get("highlight", type=int)
     return render_template(
-        "runs.html", rows=rows, current_run_id=current_run_id, highlight_id=highlight_id
+        "runs.html",
+        rows=rows,
+        current_run_id=current_run_id,
+        highlight_id=highlight_id,
+        can_compare=can_compare,
     )
 
 
@@ -309,6 +319,77 @@ def run_progress(run_id: int) -> Response | str:
     return render_template(
         "partials/run_row.html", row=row, current_run_id=current_run_id, highlight_id=highlight_id
     )
+
+
+# -- Run diff view (§5.4 / §8.9, Slice 4) ------------------------------------
+
+
+def _sparkline_points(trend: list, width: int = 160, height: int = 32) -> str:  # noqa: ANN001
+    """Project a score trend onto an SVG polyline's ``points`` attribute.
+
+    Done server-side because it's arithmetic, not interaction — shipping a
+    charting library (or any JS at all) for a 30-point sparkline would be
+    absurd, and this keeps the offline/no-CDN property the app has held since
+    Slice 1. The y-axis is pinned to the score's real 0-100 domain rather than
+    auto-fitted to min/max, so a flat-but-terrible run reads as a line along
+    the bottom instead of being rescaled to look mid-range.
+    """
+    if not trend:
+        return ""
+    pad = 3.0
+    inner_h = height - 2 * pad
+    if len(trend) == 1:
+        y = pad + inner_h * (1 - trend[0].score / 100)
+        return f"0,{y:.1f} {width},{y:.1f}"
+    step = width / (len(trend) - 1)
+    return " ".join(
+        f"{i * step:.1f},{pad + inner_h * (1 - p.score / 100):.1f}" for i, p in enumerate(trend)
+    )
+
+
+@bp.get("/runs/diff")
+def runs_diff() -> Response | str | tuple[str, int]:
+    """Three-column diff board (§8.9). ``?a=&b=`` selects the runs; with either
+    missing we fall back to the account's previous-vs-latest completed pair,
+    which is what every entry point (Runs "Compare", the dashboard strip) wants
+    anyway."""
+    a = request.args.get("a", type=int)
+    b = request.args.get("b", type=int)
+    # Everything the template touches is resolved inside this scope; the two
+    # early returns below render while the session is still open, so they need
+    # no expunging. Only the success path renders after it closes.
+    with session_scope() as session:
+        account = _current_account(session)
+        if account is None:
+            return render_template("empty_state.html", reason="no_data", columns=COLUMNS)
+
+        if a is None or b is None:
+            pair = default_diff_pair(session, account.id)
+            if pair is None:
+                # Fewer than two completed scans — nothing to compare yet. A
+                # normal state on a freshly connected account, not an error.
+                return render_template(
+                    "run_diff.html", account=account, d=None, runs=list_runs(session)
+                )
+            a, b = pair
+
+        try:
+            d = diff(session, a, b)
+        except DiffError as exc:
+            return render_template(
+                "run_diff.html", account=account, d=None, runs=list_runs(session), error=str(exc)
+            ), 400
+
+        trend = score_trend(session, account.id)
+        rows = list_runs(session)
+        return render_template(
+            "run_diff.html",
+            account=account,
+            d=d,
+            runs=rows,
+            trend=trend,
+            spark_points=_sparkline_points(trend),
+        )
 
 
 def _render_drawer(session, group_id: int, **extra) -> str:  # noqa: ANN001, ANN003
@@ -530,6 +611,38 @@ def palette_search() -> Response | str:
         return render_template("partials/palette_results.html", rows=page.rows)
 
 
+@dataclass(frozen=True)
+class SinceLastScan:
+    """The dashboard's "since last scan" strip (§5.4 / §8.9 entry point).
+
+    Reuses the ``run_summary.new_count`` / ``resolved_count`` that ScanService
+    has computed since Phase 0 rather than recomputing a diff — the strip is a
+    teaser, and the full board is one click away. ``diff_href`` is None when
+    there's no earlier run to compare against, which is also exactly when the
+    counts themselves are NULL.
+    """
+
+    new_count: int
+    resolved_count: int
+    diff_href: str | None
+
+
+def _since_last_scan(session, run) -> SinceLastScan | None:  # noqa: ANN001
+    """None when this account has never been diffable (first ever scan), which
+    the template reads as "don't render the strip at all"."""
+    if run is None or run.summary is None:
+        return None
+    summary = run.summary
+    if summary.new_count is None or summary.resolved_count is None:
+        return None
+    pair = default_diff_pair(session, run.account_id)
+    return SinceLastScan(
+        new_count=summary.new_count,
+        resolved_count=summary.resolved_count,
+        diff_href=url_for("web.runs_diff", a=pair[0], b=pair[1]) if pair else None,
+    )
+
+
 def _render_findings(*, full_page: bool, open_group: int | None = None) -> Response | str:
     sort = parse_sort(request.args.get("sort"))
     filters = parse_filters(request.args)
@@ -551,6 +664,9 @@ def _render_findings(*, full_page: bool, open_group: int | None = None) -> Respo
         # (id, name) pairs are built here rather than in the template since Jinja
         # has no builtin `zip` filter.
         roster_json = [[u.id, u.display_name] for u in active_users(session)]
+        # Resolved to plain fields before the expunges below, since it reads
+        # run.summary (a lazy relationship) and the strip outlives the session.
+        since = _since_last_scan(session, result.run) if full_page else None
         # Expunge so template access after the session closes doesn't lazy-load.
         for row in result.rows:
             session.expunge(row)
@@ -572,6 +688,7 @@ def _render_findings(*, full_page: bool, open_group: int | None = None) -> Respo
         "sort_map": {s.key: s.desc for s in sort},
         "primary_sort": sort[0] if sort else None,
         "open_group": open_group,
+        "since": since,
     }
     template = "findings.html" if full_page else "partials/findings_table.html"
     return render_template(template, **ctx)

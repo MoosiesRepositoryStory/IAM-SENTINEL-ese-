@@ -12,6 +12,21 @@
   {% endif %}
 </p>
 
+{# "Since last scan" strip (§5.4 / §8.9 entry point). Only rendered once this
+   account has an earlier run to compare against — before that, new/resolved
+   counts are NULL and a strip reading "+0 / -0" would imply a stable account
+   rather than a first scan. #}
+{% if since %}
+<div class="since-strip">
+  <span class="ss-label">Since last scan</span>
+  <span class="ss-stat new"><b>+{{ since.new_count }}</b> new</span>
+  <span class="ss-stat resolved"><b>-{{ since.resolved_count }}</b> resolved</span>
+  {% if since.diff_href %}
+  <a class="btn ghost tiny" href="{{ since.diff_href }}" style="margin-left:auto">View diff →</a>
+  {% endif %}
+</div>
+{% endif %}
+
 <!-- The filter form owns all query state except pagination; any change re-fetches
      just the table region and pushes the new URL. -->
 <form id="filterform" class="filterbar"

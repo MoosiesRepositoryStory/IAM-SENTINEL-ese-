@@ -20,6 +20,7 @@ from app.ingestion import get_adapter, normalize  # noqa: E402
 from app.ingestion.base import ProgressReporter, available_adapters  # noqa: E402
 from app.models import Finding, FindingGroup  # noqa: E402
 from app.services import create_account, run_scan  # noqa: E402
+from app.services.diff_service import diff  # noqa: E402
 from sqlalchemy import select  # noqa: E402
 
 pytestmark = pytest.mark.integration
@@ -28,6 +29,11 @@ pytestmark = pytest.mark.integration
 def _fetch():
     adapter = get_adapter("moto_aws")
     return normalize(adapter.fetch({}, ProgressReporter()))
+
+
+def _fetch_at(drift_level: int):
+    adapter = get_adapter("moto_aws")
+    return normalize(adapter.fetch({"drift_level": drift_level}, ProgressReporter()))
 
 
 def _fingerprints(findings) -> set[str]:
@@ -134,8 +140,16 @@ def test_scan_moto_account_end_to_end(db_session) -> None:
 
 
 def test_rescan_moto_reuses_finding_groups(db_session) -> None:
-    """A second moto scan correlates to the same groups (determinism → continuity)."""
-    account = create_account(db_session, name="Acme (moto)", source_type="moto_aws")
+    """A second moto scan correlates to the same groups (determinism → continuity).
+
+    Pinned to ``drift: False`` deliberately: this asserts the *correlation*
+    property in isolation — identical input twice must produce zero new groups.
+    Drift (on by default, Slice 4) intentionally changes the org between scans,
+    which is a different property, covered by the drift tests below.
+    """
+    account = create_account(
+        db_session, name="Acme (moto)", source_type="moto_aws", source_config={"drift": False}
+    )
     run1 = run_scan(db_session, account.id)
     ids_1 = {g.id for g in db_session.scalars(select(FindingGroup)).all()}
 
@@ -146,3 +160,89 @@ def test_rescan_moto_reuses_finding_groups(db_session) -> None:
     assert ids_1 == ids_2  # no new groups: identical fingerprints carried forward
     for g in db_session.scalars(select(FindingGroup)).all():
         assert g.last_seen_run == run2.id
+
+
+# -- deterministic seed drift (§5.4, Slice 4) --------------------------------
+
+
+def test_drift_stage_zero_is_the_pristine_baseline() -> None:
+    """An explicit level 0 must be byte-identical to no level at all, so every
+    direct/CLI caller of the adapter is untouched by the drift feature."""
+    baseline = _fingerprints(run_analysis(_fetch(), Thresholds()).findings)
+    explicit_zero = _fingerprints(run_analysis(_fetch_at(0), Thresholds()).findings)
+    assert baseline == explicit_zero
+
+
+def test_drift_is_deterministic_within_a_stage() -> None:
+    """Slice 1's determinism guarantee must hold *per stage*: seeding stage 1
+    twice still produces identical fingerprints."""
+    a = _fingerprints(run_analysis(_fetch_at(1), Thresholds()).findings)
+    b = _fingerprints(run_analysis(_fetch_at(1), Thresholds()).findings)
+    assert a == b
+
+
+def test_drift_stage_one_adds_a_bad_user_and_fixes_one_finding() -> None:
+    ds0, ds1 = _fetch_at(0), _fetch_at(1)
+    names_0 = {p.username for p in ds0.principals}
+    names_1 = {p.username for p in ds1.principals}
+
+    # The drifted-in contractor appears...
+    assert "contractor-x" not in names_0
+    assert "contractor-x" in names_1
+    # ...and carol's MFA gets enrolled, which is what resolves a finding.
+    assert next(p for p in ds0.principals if p.username == "carol").mfa_enabled is False
+    assert next(p for p in ds1.principals if p.username == "carol").mfa_enabled is True
+    # erin's key ages, changing evidence without changing identity.
+    assert next(p for p in ds0.principals if p.username == "erin").access_key_age_days == 400
+    assert next(p for p in ds1.principals if p.username == "erin").access_key_age_days == 800
+
+
+def test_drift_stage_is_capped_so_a_third_scan_adds_no_new_churn() -> None:
+    """Stage 2+ re-materializes stage 1, so a third scan's diff is legitimately
+    empty rather than inventing drift the demo hasn't earned."""
+    assert _fingerprints(run_analysis(_fetch_at(1), Thresholds()).findings) == _fingerprints(
+        run_analysis(_fetch_at(2), Thresholds()).findings
+    )
+
+
+def test_second_scan_drifts_and_populates_all_three_diff_columns(db_session) -> None:
+    """The end-to-end demo bar: connect → scan → scan again → a non-empty board.
+
+    This is the one test that ties the drift seed, the scan pipeline, and
+    DiffService together against real moto data; ``test_diff_service`` covers
+    the set-math in isolation.
+    """
+    account = create_account(db_session, name="Acme (moto)", source_type="moto_aws")
+    run1 = run_scan(db_session, account.id)
+    run2 = run_scan(db_session, account.id)
+
+    d = diff(db_session, run1.id, run2.id)
+
+    assert d.new, "drift must introduce new findings"
+    assert d.resolved, "drift must resolve at least one finding"
+    assert d.changed, "drift must change at least one surviving finding"
+    assert not d.is_empty
+
+    # New findings all belong to the drifted-in contractor.
+    assert all("contractor-x" in c.principal_uid for c in d.new)
+    # The resolved one is carol's MFA finding, closed by her enrolling.
+    assert [c.check_id for c in d.resolved] == ["iam.user.mfa_disabled"]
+    assert "carol" in d.resolved[0].principal_uid
+    # erin's key-age finding survives with only its evidence moved 400 -> 800.
+    erin = next(c for c in d.changed if "erin" in c.principal_uid)
+    assert [(e.key, e.before, e.after) for e in erin.delta.evidence_changes] == [
+        ("key_age_days", 400, 800)
+    ]
+    # The account got riskier overall: a new admin-equivalent user outweighs one
+    # resolved MFA finding.
+    assert d.net_risk > 0
+
+
+def test_drift_can_be_pinned_off_per_account(db_session) -> None:
+    account = create_account(
+        db_session, name="Acme (pinned)", source_type="moto_aws", source_config={"drift": False}
+    )
+    run1 = run_scan(db_session, account.id)
+    run2 = run_scan(db_session, account.id)
+
+    assert diff(db_session, run1.id, run2.id).is_empty

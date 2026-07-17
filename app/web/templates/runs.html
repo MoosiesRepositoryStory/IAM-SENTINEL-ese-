@@ -4,7 +4,12 @@
 {% block crumb %}<b>Runs</b>{% endblock %}
 
 {% block main %}
-<div class="page-head"><h1>Runs</h1></div>
+<div class="page-head">
+  <h1>Runs</h1>
+  {% if can_compare %}
+  <a class="btn primary" style="margin-left:auto" href="{{ url_for('web.runs_diff') }}">⇄ Compare last two</a>
+  {% endif %}
+</div>
 <p class="page-sub">Scan execution history across all connected accounts. A queued or running scan updates live below.</p>
 
 {% if rows %}

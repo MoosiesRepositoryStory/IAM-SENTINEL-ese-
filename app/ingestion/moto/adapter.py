@@ -43,11 +43,17 @@ class MotoAwsIngestionAdapter:
         import boto3
         from moto import mock_aws
 
+        # Which drift stage of the org to materialize (§5.4 / Slice 4).
+        # Absent = 0 = the pristine baseline, so a direct or CLI call to this
+        # adapter is unaffected by drift; ``scan_service`` is what injects a
+        # non-zero level, derived from the account's completed-run ordinal.
+        drift_level = _int_or_none(str(source_config.get("drift_level", 0))) or 0
+
         _dummy_credentials()
         with mock_aws():
             iam = boto3.client("iam", region_name=_REGION)
             progress.update(10, "Seeding simulated AWS org")
-            seed_org(iam)
+            seed_org(iam, drift_level=drift_level)
 
             progress.update(25, "Listing IAM users")
             principals, attachments, policy_docs = self._read_users(iam)

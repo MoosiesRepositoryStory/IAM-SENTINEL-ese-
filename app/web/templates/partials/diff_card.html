@@ -1,0 +1,40 @@
+{# One card on the diff board (§8.9). Clicking opens the SAME drawer the
+   findings table uses — Sentinel.openDrawer only needs a #drawer mount point
+   and a group id, so no diff-specific drawer code exists. #}
+<div class="diff-card sev-border-{{ c.severity }}"
+     data-group-id="{{ c.group_id }}"
+     tabindex="0"
+     role="button"
+     aria-label="Open finding: {{ c.title }}"
+     onclick="Sentinel.openDrawer({{ c.group_id }})"
+     onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); Sentinel.openDrawer({{ c.group_id }}); }">
+  <div class="dc-head">
+    <span class="pill sev-{{ c.severity }}"><span class="dot"></span>{{ c.severity }}</span>
+    <span class="dc-risk" title="Risk score">{{ c.risk_score }}</span>
+  </div>
+  <div class="dc-title">{{ c.title }}</div>
+  <div class="dc-meta mono">{{ c.check_id }}</div>
+
+  {% if c.delta %}
+  <div class="dc-deltas">
+    {% if c.delta.severity_changed %}
+      <span class="delta sev">Severity {{ c.delta.severity_before }} → {{ c.delta.severity_after }}</span>
+    {% endif %}
+    {% if c.delta.risk_changed %}
+      {# Risk UP is bad (red), DOWN is good (green) — opposite of the score. #}
+      <span class="delta {{ 'up' if c.delta.risk_delta > 0 else 'down' }}">
+        Risk {{ c.delta.risk_before }} → {{ c.delta.risk_after }}
+        ({{ '+' if c.delta.risk_delta > 0 }}{{ c.delta.risk_delta }})
+      </span>
+    {% endif %}
+    {% if c.delta.status_changed %}
+      <span class="delta status">Status {{ c.delta.status_before }} → {{ c.delta.status_after }}</span>
+    {% endif %}
+    {% for ev in c.delta.evidence_changes %}
+      <span class="delta ev" title="Evidence field &quot;{{ ev.key }}&quot; changed">
+        {{ ev.key }} {{ ev.before if ev.before is not none else '—' }} → {{ ev.after if ev.after is not none else '—' }}
+      </span>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>

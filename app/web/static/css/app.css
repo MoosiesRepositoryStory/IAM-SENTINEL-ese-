@@ -641,3 +641,111 @@ input[type="file"].text-input, input[type="file"] {
 
 tr.run-highlight { background: var(--accent-soft); }
 tr.run-highlight:hover { background: var(--accent-soft); }
+
+/* ---- Run diff board (§5.4 / §8.9, Slice 4) ---- */
+/* Semantic colors reuse the existing severity tokens rather than introducing a
+   parallel red/amber/green set: New = critical-red, Changed = medium-amber,
+   Resolved = low-green, so the board reads consistently with every pill and
+   badge elsewhere and stays correct in both themes automatically. */
+.since-strip {
+  display: flex; align-items: center; gap: 14px; margin: 0 0 14px;
+  padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg-elev); font-size: 12.5px;
+}
+.ss-label { color: var(--text-muted); font-weight: 600; }
+.ss-stat { color: var(--text-muted); }
+.ss-stat b { font-variant-numeric: tabular-nums; }
+.ss-stat.new b { color: var(--sev-critical); }
+.ss-stat.resolved b { color: var(--sev-low); }
+
+.diff-picker {
+  display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap;
+  margin: 12px 0 14px;
+}
+.diff-picker .wfield { flex: 0 1 260px; }
+.diff-vs { padding-bottom: 9px; color: var(--text-faint); font-size: 12px; }
+
+.spark-wrap {
+  display: flex; align-items: center; gap: 8px; margin-left: auto;
+  padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg-elev); color: var(--accent);
+}
+.spark-label { font-size: 11px; color: var(--text-muted); }
+.spark { width: 160px; height: 32px; display: block; overflow: visible; }
+.spark-ends { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+.diff-banner {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding: 10px 14px; margin-bottom: 14px;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-elev);
+  font-size: 13px;
+}
+.db-stat { color: var(--text-muted); }
+.db-stat b { font-variant-numeric: tabular-nums; font-size: 14px; }
+.db-stat.new b { color: var(--sev-critical); }
+.db-stat.changed b { color: var(--sev-medium); }
+.db-stat.resolved b { color: var(--sev-low); }
+.db-stat.muted b { color: var(--text); }
+/* Risk up = worse (red); risk down = better (green). The score is inverted:
+   a HIGHER score is better, so score-up gets the green. */
+.db-stat.up b { color: var(--sev-critical); }
+.db-stat.down b { color: var(--sev-low); }
+.db-stat.up-good b { color: var(--sev-low); }
+.db-sep { width: 1px; height: 18px; background: var(--border-strong); }
+.db-runs { margin-left: auto; font-size: 11.5px; color: var(--text-faint); }
+
+.diff-board {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px;
+  align-items: start;
+}
+@media (max-width: 1100px) { .diff-board { grid-template-columns: 1fr; } }
+
+.diff-col {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg-elev); overflow: hidden; min-width: 0;
+}
+.dcol-head {
+  display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+  border-bottom: 1px solid var(--border); font-size: 13px;
+  border-top: 2px solid var(--border-strong);
+}
+.diff-new .dcol-head { border-top-color: var(--sev-critical); }
+.diff-changed .dcol-head { border-top-color: var(--sev-medium); }
+.diff-resolved .dcol-head { border-top-color: var(--sev-low); }
+.dcol-count {
+  font-size: 11px; padding: 1px 7px; border-radius: 999px;
+  background: var(--bg-elev-2); border: 1px solid var(--border);
+  color: var(--text-muted); font-variant-numeric: tabular-nums;
+}
+.dcol-hint { margin-left: auto; font-size: 11px; color: var(--text-faint); }
+/* Each column scrolls on its own so a long New column can't push Resolved
+   below the fold — the whole point of a board is seeing all three at once. */
+.dcol-body { padding: 10px; display: flex; flex-direction: column; gap: 8px; max-height: 62vh; overflow-y: auto; }
+.dcol-empty { margin: 6px 2px; font-size: 12px; color: var(--text-faint); }
+
+.diff-card {
+  border: 1px solid var(--border); border-left: 3px solid var(--border-strong);
+  border-radius: 8px; background: var(--bg-elev-2); padding: 9px 10px;
+  cursor: pointer; transition: border-color .12s ease, background .12s ease;
+}
+.diff-card:hover { background: var(--row-hover); border-color: var(--border-strong); }
+.diff-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.sev-border-CRITICAL { border-left-color: var(--sev-critical); }
+.sev-border-HIGH { border-left-color: var(--sev-high); }
+.sev-border-MEDIUM { border-left-color: var(--sev-medium); }
+.sev-border-LOW { border-left-color: var(--sev-low); }
+
+.dc-head { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.dc-risk { margin-left: auto; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.dc-title { font-size: 12.5px; line-height: 1.4; margin-bottom: 4px; }
+.dc-meta { font-size: 10.5px; color: var(--text-faint); }
+.dc-deltas { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
+.delta {
+  font-size: 10.5px; padding: 1px 6px; border-radius: 4px;
+  border: 1px solid var(--border); background: var(--bg-elev);
+  color: var(--text-muted); font-variant-numeric: tabular-nums;
+}
+.delta.up { color: var(--sev-critical); border-color: color-mix(in srgb, var(--sev-critical) 35%, transparent); }
+.delta.down { color: var(--sev-low); border-color: color-mix(in srgb, var(--sev-low) 35%, transparent); }
+.delta.sev { color: var(--sev-high); border-color: color-mix(in srgb, var(--sev-high) 35%, transparent); }
+.delta.ev, .delta.status { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }

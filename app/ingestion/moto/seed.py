@@ -16,12 +16,21 @@ resource with ``CreateDate = now`` and can't backdate. The adapter resolves them
 against the scan time, so the demo keeps surfacing "410-day-old key" no matter
 when it runs. Fingerprints exclude these values (§4.5), so this never disturbs
 cross-run continuity.
+
+**Drift (Phase 2 Slice 4).** ``seed_org(iam, drift_level=N)`` materializes the
+org *as of* drift stage N — the org an account has drifted into after N scans.
+Stage 0 is the pristine baseline above and is what every direct/CLI caller
+gets; ``scan_service`` injects the account's completed-run ordinal so the
+second scan of a demo account lands on stage 1 and the diff board has something
+real to show. Drift is a pure function of the stage number (no randomness, no
+wall-clock), so scanning at stage N twice still produces byte-identical
+fingerprints — the Slice 1 determinism guarantee holds *per stage*.
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 # --- policy documents ------------------------------------------------------
@@ -231,6 +240,59 @@ ROLES: tuple[RoleSpec, ...] = (
     ),
 )
 
+# --- drift (Slice 4) -------------------------------------------------------
+
+# The user that "appeared" between scans: an unmanaged contractor handed
+# AdminAccess with no MFA and a long-stale key. Deliberately a *new principal*
+# rather than a new policy on an existing one, so it lands as a clean set of
+# NEW fingerprints rather than muddying an existing finding's deltas.
+_DRIFT_USER = UserSpec(
+    "contractor-x",
+    console=True,
+    mfa=False,
+    managed=("AdminAccess",),
+    key_age_days=500,
+    last_login_days_ago=200,
+    password_age_days=240,
+)
+
+
+def org_at(drift_level: int) -> tuple[tuple[UserSpec, ...], tuple[RoleSpec, ...]]:
+    """The org's declared state at drift stage ``drift_level``.
+
+    Stage 0 = the pristine baseline. Stage 1 (and, for now, anything above it)
+    applies one round of realistic drift chosen to exercise all three diff
+    columns — see ``docs/`` §5.4 / §8.9:
+
+    - **New**: ``contractor-x`` appears (admin-equivalent, no MFA, ancient key).
+    - **Resolved**: ``carol`` finally enrols MFA, closing her mfa_disabled
+      finding outright.
+    - **Changed**: ``erin``'s key ages 400 -> 800 days, which moves that
+      finding's evidence without touching its fingerprint (§4.5 excludes
+      temporal values). Carol's *remaining* findings also shift risk score,
+      because the risk model's likelihood term keys off
+      console-access-without-MFA — enrolling her in MFA lowers them all. That
+      second-order effect is intentional: it demonstrates that a delta can come
+      from re-scoring, not only from re-detection.
+
+    Stages are cumulative and capped at 1: a third scan re-materializes stage 1
+    unchanged, so its diff against the second scan is legitimately empty rather
+    than inventing churn the demo hasn't earned.
+    """
+    if drift_level < 1:
+        return USERS, ROLES
+
+    users = tuple(
+        replace(u, mfa=True)
+        if u.name == "carol"
+        else replace(u, key_age_days=800)
+        if u.name == "erin"
+        else u
+        for u in USERS
+    ) + (_DRIFT_USER,)
+    return users, ROLES
+
+
 # A throwaway but well-formed password for login profiles (console access marker).
 _LOGIN_PASSWORD = "Acme-Demo-Pw!2026"  # noqa: S105 — simulated moto org, not a real secret.
 
@@ -246,8 +308,9 @@ def _tags(user: UserSpec) -> list[dict[str, str]]:
     return tags
 
 
-def seed_org(iam: Any) -> None:
-    """Create the full Acme org in ``iam`` (a boto3 IAM client on a moto mock).
+def seed_org(iam: Any, drift_level: int = 0) -> None:
+    """Create the Acme org in ``iam`` (a boto3 IAM client on a moto mock) at
+    drift stage ``drift_level`` (default 0 = the pristine baseline).
 
     Idempotent within a mock's lifetime: if the users already exist (a persistent
     moto server), it no-ops. With the per-scan ``mock_aws()`` context the org is
@@ -256,6 +319,8 @@ def seed_org(iam: Any) -> None:
     if iam.list_users(MaxItems=1).get("Users"):
         return  # already seeded (persistent-mock case)
 
+    users, roles = org_at(drift_level)
+
     policy_arns: dict[str, str] = {}
     for spec in MANAGED_POLICIES:
         resp = iam.create_policy(
@@ -263,7 +328,7 @@ def seed_org(iam: Any) -> None:
         )
         policy_arns[spec.name] = resp["Policy"]["Arn"]
 
-    for user in USERS:
+    for user in users:
         iam.create_user(UserName=user.name, Tags=_tags(user))
         for pname in user.managed:
             iam.attach_user_policy(UserName=user.name, PolicyArn=policy_arns[pname])
@@ -284,7 +349,7 @@ def seed_org(iam: Any) -> None:
                 AuthenticationCode2="234567",
             )
 
-    for role in ROLES:
+    for role in roles:
         iam.create_role(
             RoleName=role.name, AssumeRolePolicyDocument=json.dumps(role.trust)
         )

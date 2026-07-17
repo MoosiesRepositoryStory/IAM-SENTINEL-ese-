@@ -165,7 +165,7 @@ def execute_scan(session: Session, run_id: int) -> Run:
     run.status = RunStatus.INGESTING.value
 
     try:
-        dataset = _ingest(account, reporter)
+        dataset = _ingest(account, reporter, drift_level=_drift_level(session, account, run))
         run.status = RunStatus.ANALYZING.value
         reporter.update(55, "Running checks")
         result = run_analysis(dataset, thresholds)
@@ -192,9 +192,32 @@ def execute_scan(session: Session, run_id: int) -> Run:
     return run
 
 
-def _ingest(account: Account, reporter: ProgressReporter) -> NormalizedDataset:
+def _drift_level(session: Session, account: Account, run: Run) -> int:
+    """How far this account's simulated org has drifted by the time ``run``
+    scans it: its count of already-completed runs (§5.4, Slice 4).
+
+    Deriving the stage from run history rather than storing a counter keeps
+    drift a pure function of what already happened — re-running the same scan
+    can't advance it, and nothing needs migrating. Opt out per account with
+    ``source_config['drift'] = False``, which pins the pristine baseline (the
+    file adapter ignores the key entirely; only the moto adapter reads it).
+    """
+    if (account.source_config or {}).get("drift") is False:
+        return 0
+    prior_completed = session.scalar(
+        select(func.count())
+        .select_from(Run)
+        .where(Run.account_id == account.id, Run.id != run.id, Run.status == "completed")
+    )
+    return int(prior_completed or 0)
+
+
+def _ingest(
+    account: Account, reporter: ProgressReporter, *, drift_level: int = 0
+) -> NormalizedDataset:
     adapter = get_adapter(account.source_type)
-    raw = adapter.fetch(account.source_config or {}, reporter)
+    config = {**(account.source_config or {}), "drift_level": drift_level}
+    raw = adapter.fetch(config, reporter)
     return normalize(raw)
 
 

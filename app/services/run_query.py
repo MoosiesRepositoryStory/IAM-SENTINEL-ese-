@@ -49,3 +49,30 @@ def get_run_row(session: Session, run_id: int) -> RunRow | None:
         return None
     account = session.get(Account, run.account_id)
     return _to_row(run, account.name if account is not None else "—")
+
+
+@dataclass(frozen=True)
+class ScorePoint:
+    run_id: int
+    score: int
+
+
+def score_trend(session: Session, account_id: int, *, limit: int = 30) -> list[ScorePoint]:
+    """Composite score per completed run, oldest -> newest — the §8.9 sparkline.
+
+    Runs that completed without a score are skipped rather than plotted as 0,
+    which would draw a fake cliff. Capped to the most recent ``limit`` runs and
+    then re-sorted ascending, so a long history shows the recent trend rather
+    than compressing everything into illegibility.
+    """
+    rows = session.execute(
+        select(Run.id, Run.composite_score)
+        .where(
+            Run.account_id == account_id,
+            Run.status == "completed",
+            Run.composite_score.is_not(None),
+        )
+        .order_by(Run.id.desc())
+        .limit(limit)
+    ).all()
+    return [ScorePoint(run_id=rid, score=score) for rid, score in reversed(rows)]

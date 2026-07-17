@@ -462,14 +462,16 @@ window.Sentinel = (function () {
     { group: 'Navigate', label: 'Go to Findings', shortcut: 'g f', enabled: true, action: () => navigate('/findings') },
     { group: 'Navigate', label: 'Go to Graph', shortcut: '', enabled: false },
     { group: 'Navigate', label: 'Go to Compliance', shortcut: 'g c', enabled: false },
-    { group: 'Navigate', label: 'Go to Runs', shortcut: 'g r', enabled: false },
-    { group: 'Navigate', label: 'Go to Accounts', shortcut: '', enabled: false },
+    { group: 'Navigate', label: 'Go to Runs', shortcut: 'g r', enabled: true, action: () => navigate('/runs') },
+    { group: 'Navigate', label: 'Go to Accounts', shortcut: '', enabled: true, action: () => navigate('/accounts') },
     { group: 'Navigate', label: 'Go to Exceptions', shortcut: '', enabled: false },
     { group: 'Navigate', label: 'Go to Settings', shortcut: '', enabled: false },
     { group: 'Actions', label: 'Toggle theme', shortcut: 't', enabled: true, action: () => toggleTheme() },
     { group: 'Actions', label: 'Run scan', shortcut: '', enabled: false },
     { group: 'Actions', label: 'Connect account', shortcut: '', enabled: false },
-    { group: 'Actions', label: 'Compare last two runs', shortcut: '', enabled: false },
+    // §8.9 lists the palette as a diff entry point. The route resolves the
+    // default previous-vs-latest pair itself, so no run ids are needed here.
+    { group: 'Actions', label: 'Compare last two runs', shortcut: '', enabled: true, action: () => navigate('/runs/diff') },
     { group: 'Actions', label: 'Create saved view', shortcut: '', enabled: false },
     { group: 'Actions', label: 'Toggle density', shortcut: '', enabled: false },
   ];
@@ -533,6 +535,19 @@ window.Sentinel = (function () {
       }
       list.appendChild(el);
     });
+    highlightFirstPaletteItem();
+  }
+
+  // Enter activates whichever item carries `.on`. Without seeding that on the
+  // first enabled item, a freshly opened (or freshly filtered) palette has no
+  // selection, so typing a query and hitting Enter — the way every command
+  // palette is used — silently did nothing until you pressed ArrowDown first.
+  // Called after both render paths: the static list here, and the
+  // server-searched findings that htmx swaps into #palette-results.
+  function highlightFirstPaletteItem() {
+    const items = paletteVisibleItems();
+    items.forEach((i) => i.classList.remove('on'));
+    if (items[0]) items[0].classList.add('on');
   }
 
   function openPalette() {
@@ -755,6 +770,9 @@ window.Sentinel = (function () {
         const box = document.querySelector('.drawer-panel [data-tab="activity"] textarea[name=body]');
         if (box) box.focus();
       }
+      // Server-searched findings just landed in the palette: re-seed the Enter
+      // selection so it points at a result that actually exists now.
+      if (evt.target && evt.target.id === 'palette-results') highlightFirstPaletteItem();
     });
 
     // The row-status OOB swap (transition/suppress/accept-risk) is a genuine
