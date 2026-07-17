@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% set active_nav = 'checks' %}
+{% block title %}Checks · IAM Sentinel{% endblock %}
+{% block crumb %}<b>Checks</b>{% endblock %}
+
+{% block main %}
+<div class="page-head">
+  <h1>Checks catalog</h1>
+</div>
+<p class="page-sub">
+  Every rule in the registry (§6.1) — {{ rows | length }} checks.
+  {% if not has_run %}Finding counts will appear once an account has a completed scan.{% endif %}
+</p>
+
+<div class="table-wrap">
+  <div class="tbl-scroll">
+  <table class="findings checks-catalog">
+    <thead>
+      <tr>
+        <th>Check</th>
+        <th>Category</th>
+        <th>Severity</th>
+        <th>Compliance</th>
+        <th class="num">Active findings</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>
+          <div class="chk-title">{{ row.title }}</div>
+          <div class="mono chk-id">{{ row.check_id }}</div>
+          <div class="chk-desc">{{ row.description }}</div>
+        </td>
+        <td style="text-transform:capitalize">{{ row.category }}</td>
+        <td><span class="pill sev-{{ row.severity }}"><span class="dot"></span>{{ row.severity | capitalize }}</span></td>
+        <td>
+          <span class="tags">
+            {% for t in row.compliance_tags %}<span class="tag">{{ t }}</span>{% endfor %}
+            {% if not row.compliance_tags %}<span class="muted">—</span>{% endif %}
+          </span>
+        </td>
+        <td class="num">
+          {% if row.finding_count %}
+            <a href="{{ url_for('web.findings', check=[row.check_id]) }}">{{ row.finding_count }}</a>
+          {% else %}
+            <span class="muted">{{ '—' if not has_run else '0' }}</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

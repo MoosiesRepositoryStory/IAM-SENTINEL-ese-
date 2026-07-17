@@ -42,7 +42,8 @@
     <a class="nav-item {{ 'active' if nav == 'dashboard' }}"><span class="ico">▚</span> Dashboard</a>
     <a class="nav-item {{ 'active' if nav == 'findings' }}" href="{{ url_for('web.findings') }}"><span class="ico">◈</span> Findings</a>
     <a class="nav-item {{ 'active' if nav == 'graph' }}" href="{{ url_for('web.graph_overview') }}"><span class="ico">⧉</span> Graph</a>
-    <a class="nav-item {{ 'active' if nav == 'compliance' }}"><span class="ico">✓</span> Compliance</a>
+    <a class="nav-item {{ 'active' if nav == 'compliance' }}" href="{{ url_for('web.compliance') }}"><span class="ico">✓</span> Compliance</a>
+    <a class="nav-item {{ 'active' if nav == 'checks' }}" href="{{ url_for('web.checks_catalog') }}"><span class="ico">☰</span> Checks</a>
     <div class="nav-section">Operate</div>
     <a class="nav-item {{ 'active' if nav == 'runs' }}" href="{{ url_for('web.runs') }}"><span class="ico">↻</span> Runs</a>
     <a class="nav-item {{ 'active' if nav == 'accounts' }}" href="{{ url_for('web.accounts') }}"><span class="ico">☁</span> Accounts</a>

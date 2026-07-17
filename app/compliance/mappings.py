@@ -54,3 +54,16 @@ def compliance_tags_for(check_id: str) -> list[str]:
 
 def frameworks_for(check_id: str) -> set[str]:
     return set(_MAP.get(check_id, {}).keys())
+
+
+def framework_controls() -> dict[str, dict[str, list[str]]]:
+    """Invert ``_MAP`` into ``{framework: {control_id: [check_id, ...]}}`` —
+    the shape the compliance page rolls up (§6.5, Phase 3 Slice 4). A
+    control's existence and check membership come entirely from this static
+    table, not from what fired on any particular run, so a clean run still
+    shows every control explicitly rather than omitting it."""
+    out: dict[str, dict[str, list[str]]] = {}
+    for check_id, fw_map in _MAP.items():
+        for framework, control in fw_map.items():
+            out.setdefault(framework, {}).setdefault(control, []).append(check_id)
+    return out

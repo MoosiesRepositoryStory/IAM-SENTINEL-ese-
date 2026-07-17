@@ -62,11 +62,12 @@ class FindingFilters:
     severity: list[str] = field(default_factory=list)
     status: list[str] = field(default_factory=list)
     category: list[str] = field(default_factory=list)
+    check: list[str] = field(default_factory=list)
     search: str = ""
 
     @property
     def active(self) -> bool:
-        return bool(self.severity or self.status or self.category or self.search)
+        return bool(self.severity or self.status or self.category or self.check or self.search)
 
 
 @dataclass
@@ -138,6 +139,7 @@ def parse_filters(args: dict[str, list[str]] | Any) -> FindingFilters:
         severity=_valid_values(Severity, getlist("severity")),
         status=_valid_values(Status, getlist("status")),
         category=_valid_values(Category, getlist("category")),
+        check=getlist("check"),
         search=getone("q"),
     )
 
@@ -157,6 +159,8 @@ def _apply_filters(stmt: Select[Any], f: FindingFilters) -> Select[Any]:
         stmt = stmt.where(Finding.status.in_(f.status))
     if f.category:
         stmt = stmt.where(Finding.category.in_(f.category))
+    if f.check:
+        stmt = stmt.where(Finding.check_id.in_(f.check))
     if f.search:
         like = f"%{f.search.lower()}%"
         stmt = stmt.where(

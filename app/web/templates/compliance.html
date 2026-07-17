@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% set active_nav = 'compliance' %}
+{% block title %}Compliance · IAM Sentinel{% endblock %}
+{% block crumb %}<b>Compliance</b>{% endblock %}
+
+{% block main %}
+<div class="page-head">
+  <h1>Compliance</h1>
+</div>
+<p class="page-sub">Per-framework control checklist (§6.5) for the latest completed run. A control passes when none of its mapped checks have an active (open/investigating) finding — a suppressed or accepted-risk finding doesn't count against it.</p>
+
+{% for fw in frameworks %}
+<div class="compliance-framework">
+  <div class="cf-head">
+    <h2>{{ fw.label }}</h2>
+    <div class="cf-score">
+      <span class="cf-pct cf-{{ 'good' if fw.percent >= 90 else ('mid' if fw.percent >= 70 else 'bad') }}">{{ fw.percent }}%</span>
+      <span class="cf-count">{{ fw.passing_controls }} / {{ fw.total_controls }} controls passing</span>
+    </div>
+  </div>
+  <div class="cf-bar"><div class="cf-bar-fill cf-{{ 'good' if fw.percent >= 90 else ('mid' if fw.percent >= 70 else 'bad') }}" style="width: {{ fw.percent }}%"></div></div>
+
+  <div class="table-wrap">
+    <div class="tbl-scroll">
+    <table class="findings compliance-table">
+      <thead>
+        <tr>
+          <th>Control</th>
+          <th>Mapped checks</th>
+          <th>Status</th>
+          <th class="num">Findings</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in fw.controls %}
+        <tr>
+          <td class="mono">{{ c.control_id }}</td>
+          <td class="mapped-checks">{{ c.check_titles | join(', ') }}</td>
+          <td>
+            {% if c.passing %}
+              <span class="status st-resolved">Pass</span>
+            {% else %}
+              <span class="pill sev-{{ c.top_severity }}"><span class="dot"></span>Fail</span>
+            {% endif %}
+          </td>
+          <td class="num">
+            {% if c.finding_count %}
+              <a href="{{ url_for('web.findings', check=c.check_ids) }}">{{ c.finding_count }}</a>
+            {% else %}
+              <span class="muted">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+{% endfor %}
+{% endblock %}

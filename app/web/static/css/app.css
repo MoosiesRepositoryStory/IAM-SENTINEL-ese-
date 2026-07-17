@@ -827,4 +827,31 @@ tr.run-highlight:hover { background: var(--accent-soft); }
 .legend-path { border-color: var(--sev-critical); border-top-style: dashed; border-top-width: 3px; }
 
 .graph-link { margin-bottom: 12px; }
+
+/* ---- Compliance page (§6.5, Phase 3 Slice 4) ---- */
+.compliance-framework { margin-bottom: 30px; }
+.cf-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.cf-head h2 { font-size: 15px; margin: 0; font-weight: 650; }
+.cf-score { display: flex; align-items: center; gap: 10px; }
+.cf-pct { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cf-pct.cf-good { color: var(--sev-low); }
+.cf-pct.cf-mid { color: var(--sev-high); }
+.cf-pct.cf-bad { color: var(--sev-critical); }
+.cf-count { font-size: 12px; color: var(--text-muted); }
+.cf-bar { height: 6px; border-radius: 999px; background: var(--bg-elev-2); overflow: hidden; margin-bottom: 12px; }
+.cf-bar-fill { height: 100%; border-radius: 999px; }
+.cf-bar-fill.cf-good { background: var(--sev-low); }
+.cf-bar-fill.cf-mid { background: var(--sev-high); }
+.cf-bar-fill.cf-bad { background: var(--sev-critical); }
+.compliance-table td { vertical-align: top; }
+.compliance-table td.mapped-checks {
+  white-space: normal; max-width: 480px; color: var(--text-muted); font-size: 12.5px; line-height: 1.5;
+}
+.compliance-table .status, .compliance-table .pill { white-space: nowrap; }
+
+/* ---- Checks catalog (§8.11, Phase 3 Slice 4) ---- */
+.chk-title { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+.chk-id { font-size: 10.5px; margin-bottom: 4px; }
+.chk-desc { font-size: 12px; color: var(--text-muted); line-height: 1.5; max-width: 420px; white-space: normal; }
+.checks-catalog td { vertical-align: top; padding-top: 12px; padding-bottom: 12px; }
 #schedule-run-info { color: var(--text-faint); line-height: 1.6; }

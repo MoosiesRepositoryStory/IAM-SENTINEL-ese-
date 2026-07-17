@@ -20,7 +20,9 @@ from app.models.base import now_iso
 from app.scheduler import fire_schedule, remove_schedule_job, sync_schedule
 from app.services.account_service import list_accounts
 from app.services.bulk_service import bulk_assign, bulk_exception, bulk_transition
+from app.services.checks_catalog import list_checks
 from app.services.collaboration import CommentError, active_users, add_comment, assign
+from app.services.compliance_view import compliance_summary
 from app.services.connect_service import ConnectError, connect_account
 from app.services.diff_service import DiffError, default_diff_pair, diff
 from app.services.exception_service import (
@@ -451,6 +453,27 @@ def principal_detail(principal_uid: str) -> Response | str:
     if graph is None:
         abort(404)
     return render_template("principal_graph.html", graph=graph)
+
+
+# -- Compliance + checks catalog (§6.5 / §8.11, Phase 3 Slice 4) ------------
+
+
+@bp.get("/compliance")
+def compliance() -> Response | str:
+    with session_scope() as session:
+        run_id = _current_completed_run_id(session)
+        if run_id is None:
+            return render_template("empty_state.html", reason="no_data", columns=COLUMNS)
+        frameworks = compliance_summary(session, run_id)
+    return render_template("compliance.html", frameworks=frameworks)
+
+
+@bp.get("/checks")
+def checks_catalog() -> Response | str:
+    with session_scope() as session:
+        run_id = _current_completed_run_id(session)
+        rows = list_checks(session, run_id) if run_id is not None else list_checks()
+    return render_template("checks_catalog.html", rows=rows, has_run=run_id is not None)
 
 
 # -- Run diff view (§5.4 / §8.9, Slice 4) ------------------------------------
