@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from app.analysis.checks._util import (
+    action_matches,
     grants_admin,
     has_sensitive,
     make_finding,
@@ -31,14 +32,6 @@ _ESCALATION_PARTNERS = {
     "ec2:RunInstances",
     "lambda:CreateFunction",
 }
-
-
-def _matches(actions: set[str], target: str) -> bool:
-    """Whether ``actions`` grants ``target`` (respecting ``*`` / ``service:*``)."""
-    if "*" in actions or target in actions:
-        return True
-    service = target.split(":")[0]
-    return f"{service}:*" in actions
 
 
 @register
@@ -82,10 +75,21 @@ class PassRoleEscalationCheck:
     def run(self, ctx: CheckContext) -> Iterable[Finding]:
         for p in ctx.dataset.principals:
             actions = principal_granted_actions(ctx, p)
-            if not _matches(actions, "iam:PassRole"):
+            if not action_matches(actions, "iam:PassRole"):
                 continue
-            partners = sorted(a for a in _ESCALATION_PARTNERS if _matches(actions, a))
+            partners = sorted(a for a in _ESCALATION_PARTNERS if action_matches(actions, a))
             if partners:
+                evidence: dict[str, object] = {
+                    "escalation_path": [p.display_name, "iam:PassRole", *partners],
+                    "partner_actions": partners,
+                }
+                # Real graph-derived path (§6.2), when the permission graph
+                # traced this principal all the way to an admin-equivalent
+                # node — e.g. "intern -> iam:CreateAccessKey -> bob (admin)".
+                graph_paths = ctx.graph.escalations.get(p.principal_uid)
+                if graph_paths:
+                    evidence["graph_path"] = graph_paths[0].hops
+                    evidence["graph_path_via"] = graph_paths[0].via
                 yield make_finding(
                     self.meta.id,
                     title=f"{p.display_name} can escalate privileges via iam:PassRole",
@@ -96,10 +100,7 @@ class PassRoleEscalationCheck:
                     remediation_snippet=(
                         '{"Effect": "Deny", "Action": "iam:PassRole", "Resource": "*"}'
                     ),
-                    evidence={
-                        "escalation_path": [p.display_name, "iam:PassRole", *partners],
-                        "partner_actions": partners,
-                    },
+                    evidence=evidence,
                 )
 
 

@@ -40,6 +40,7 @@ from app.models import (
     FindingGroup,
     FindingStatusHistory,
     LogEvent,
+    PermissionEdge,
     Policy,
     Principal,
     Run,
@@ -172,6 +173,7 @@ def execute_scan(session: Session, run_id: int) -> Run:
 
         reporter.update(85, "Persisting results")
         _persist_snapshot(session, run, dataset)
+        _persist_graph_edges(session, run, result)
         _persist_findings(session, account, run, result)
         _persist_summary(session, account, run, result)
 
@@ -273,6 +275,31 @@ def _persist_snapshot(session: Session, run: Run, dataset: NormalizedDataset) ->
                 is_privileged=ev.is_privileged,
                 is_sensitive_iam=ev.is_sensitive_iam,
                 raw=ev.raw,
+            )
+        )
+    session.flush()
+
+
+def _persist_graph_edges(session: Session, run: Run, result: AnalysisResult) -> None:
+    """Persist the permission-graph edges built during analysis (§6.2, Phase 3).
+
+    Runs after ``_persist_snapshot`` (which already writes each Principal's
+    blast-radius fields, mutated in place by ``graph.build`` inside
+    ``run_analysis``) — this just materializes the edges themselves for the
+    Slice 2 graph view.
+    """
+    for e in result.graph_edges:
+        session.add(
+            PermissionEdge(
+                run_id=run.id,
+                src_type=e.src_type,
+                src_uid=e.src_uid,
+                dst_type=e.dst_type,
+                dst_uid=e.dst_uid,
+                relation=e.relation,
+                effect=e.effect,
+                is_sensitive=e.is_sensitive,
+                edge_metadata=e.metadata,
             )
         )
     session.flush()

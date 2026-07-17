@@ -21,6 +21,11 @@ def grants_admin(actions: set[str]) -> bool:
     return "*" in actions
 
 
+def action_matches(actions: set[str], target: str) -> bool:
+    """Whether ``actions`` grants ``target`` (respecting ``*`` / ``service:*``)."""
+    return pol.grants_action(actions, target)
+
+
 def has_sensitive(actions: set[str]) -> set[str]:
     """Subset of ``actions`` that are in the sensitive catalog (wildcard-aware)."""
     return {a for a in actions if pol.is_sensitive_action(a, pol.SENSITIVE_ACTIONS)}

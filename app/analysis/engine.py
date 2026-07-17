@@ -10,7 +10,9 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, field
 
+from app.analysis import graph as graph_module
 from app.analysis import risk
+from app.analysis.graph import GraphEdge
 from app.analysis.registry import REGISTRY, ActivityIndex, CheckContext
 from app.compliance.mappings import compliance_tags_for, frameworks_for
 from app.domain.records import Finding, NormalizedDataset, Thresholds
@@ -23,6 +25,7 @@ class AnalysisResult:
     counts_by_severity: dict[str, int] = field(default_factory=dict)
     counts_by_category: dict[str, int] = field(default_factory=dict)
     compliance_summary: dict[str, dict[str, int]] = field(default_factory=dict)
+    graph_edges: list[GraphEdge] = field(default_factory=list)
 
 
 def build_activity_index(dataset: NormalizedDataset) -> ActivityIndex:
@@ -50,7 +53,11 @@ def build_activity_index(dataset: NormalizedDataset) -> ActivityIndex:
 def run_analysis(dataset: NormalizedDataset, thresholds: Thresholds) -> AnalysisResult:
     """Execute every registered check, score findings, and aggregate summaries."""
     activity = build_activity_index(dataset)
-    ctx = CheckContext(dataset=dataset, thresholds=thresholds, activity=activity)
+    # Builds the permission graph and writes blast_radius_score/reachable_*
+    # onto each PrincipalRecord in place *before* checks run, so risk.py's
+    # impact scoring (below) sees real numbers, not the Phase-0 placeholder 0.
+    graph_result = graph_module.build(dataset)
+    ctx = CheckContext(dataset=dataset, thresholds=thresholds, activity=activity, graph=graph_result)
     principals = dataset.principal_by_uid()
 
     findings: list[Finding] = []
@@ -75,6 +82,7 @@ def run_analysis(dataset: NormalizedDataset, thresholds: Thresholds) -> Analysis
         counts_by_severity=dict(counts_by_severity),
         counts_by_category=dict(counts_by_category),
         compliance_summary=compliance_summary,
+        graph_edges=graph_result.edges,
     )
 
 

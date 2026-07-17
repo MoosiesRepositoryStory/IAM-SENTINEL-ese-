@@ -45,6 +45,10 @@ dev = [
     # (see app/scheduler.py). Declared here (not just in `jobs`) so dev/CI
     # actually exercises it; tests skip gracefully if it's absent.
     "APScheduler>=3.10",
+    # Permission graph + blast-radius model (Phase 3 Slice 1, §6.2). Declared
+    # here (not just in `graph`) for the same "dev/CI actually exercises this"
+    # reasoning as boto3/moto and APScheduler above.
+    "networkx>=3.3",
 ]
 
 [project.scripts]

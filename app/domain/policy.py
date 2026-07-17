@@ -112,6 +112,24 @@ def is_sensitive_action(action: str, sensitive_catalog: set[str]) -> bool:
     return False
 
 
+def grants_action(actions: set[str], target: str) -> bool:
+    """Whether a *wildcard-bearing* grant set covers a concrete ``target`` action.
+
+    The mirror image of :func:`is_sensitive_action`: there a concrete action is
+    tested against a catalog that may contain wildcards; here the roles are
+    reversed — ``actions`` (e.g. a principal's granted actions, which may
+    contain ``"*"`` or ``"iam:*"``) is the wildcard-bearing side, and
+    ``target`` (e.g. ``"iam:PassRole"``) is always concrete. The two are *not*
+    interchangeable by swapping arguments: ``is_sensitive_action`` only checks
+    whether the concrete side is itself a wildcard, never whether the catalog
+    side contains one covering it.
+    """
+    if "*" in actions or target in actions:
+        return True
+    service = target.split(":")[0]
+    return f"{service}:*" in actions
+
+
 # Curated catalog of high-blast-radius actions (§6.2). Not exhaustive by design.
 SENSITIVE_ACTIONS: set[str] = {
     "*",

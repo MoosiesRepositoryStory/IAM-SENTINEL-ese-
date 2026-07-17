@@ -12,6 +12,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
+from app.analysis.graph import GraphResult
 from app.domain.enums import Category, Severity
 from app.domain.records import Finding, NormalizedDataset, Thresholds
 
@@ -49,6 +50,7 @@ class CheckContext:
     dataset: NormalizedDataset
     thresholds: Thresholds
     activity: ActivityIndex = field(default_factory=ActivityIndex)
+    graph: GraphResult = field(default_factory=GraphResult)
 
 
 @runtime_checkable

@@ -8,6 +8,8 @@ determinism, and a full persisted scan. Skips cleanly when the optional
 
 from __future__ import annotations
 
+from collections import Counter
+
 import pytest
 
 pytest.importorskip("boto3")
@@ -18,7 +20,7 @@ from app.domain.fingerprint import fingerprint  # noqa: E402
 from app.domain.records import Thresholds  # noqa: E402
 from app.ingestion import get_adapter, normalize  # noqa: E402
 from app.ingestion.base import ProgressReporter, available_adapters  # noqa: E402
-from app.models import Finding, FindingGroup  # noqa: E402
+from app.models import Finding, FindingGroup, PermissionEdge, Principal  # noqa: E402
 from app.services import create_account, run_scan  # noqa: E402
 from app.services.diff_service import diff  # noqa: E402
 from sqlalchemy import select  # noqa: E402
@@ -98,6 +100,22 @@ def test_seed_is_deterministic_identical_fingerprints() -> None:
     assert len(a) > 20  # a rich org, not a trivial one
 
 
+def test_baseline_finding_count_and_severity_mix() -> None:
+    """Pins the documented clean-run baseline (Slice 1: 49 findings, 7 crit/17
+    high/20 med/5 low) so a wildcard-matching regression in a shared helper —
+    e.g. one that silently stops recognizing a principal's "*" or "iam:*"
+    grant as covering a concrete action like iam:PassRole — gets caught here
+    instead of only by a manual count comparison. This bit a Phase 3 Slice 1
+    refactor of the PassRole-escalation action matcher, which the loose
+    ``len(findings) > 20`` / check-id-only assertions elsewhere in this file
+    didn't catch: it silently dropped bob/frank/ci-deploy/CI-Deploy-role/
+    Break-Glass's CRITICAL escalation findings (49 -> 44, 7 crit -> 2)."""
+    result = run_analysis(_fetch(), Thresholds())
+    counts = Counter(f.severity.value for f in result.findings)
+    assert len(result.findings) == 49
+    assert dict(counts) == {"LOW": 5, "MEDIUM": 20, "HIGH": 17, "CRITICAL": 7}
+
+
 def test_planted_anomalies_surface() -> None:
     """The deliberately-planted issues each produce their expected check."""
     findings = run_analysis(_fetch(), Thresholds()).findings
@@ -137,6 +155,37 @@ def test_scan_moto_account_end_to_end(db_session) -> None:
         select(FindingGroup).where(FindingGroup.account_id == account.id)
     ).all()
     assert groups and all(g.current_status == "open" for g in groups)
+
+
+def test_scan_moto_account_populates_permission_graph(db_session) -> None:
+    """Phase 3 Slice 1: blast radius + escalation graph flow end to end into
+    the DB, not just the in-memory dataset."""
+    account = create_account(db_session, name="Acme (moto)", source_type="moto_aws")
+    run = run_scan(db_session, account.id)
+
+    edges = db_session.scalars(select(PermissionEdge).where(PermissionEdge.run_id == run.id)).all()
+    assert edges, "expected permission graph edges to be persisted"
+    relations = {e.relation for e in edges}
+    assert {"HAS_POLICY", "GRANTS_ACTION", "CAN_ASSUME", "CAN_ESCALATE"} <= relations
+
+    principals = {
+        p.username: p
+        for p in db_session.scalars(select(Principal).where(Principal.run_id == run.id)).all()
+    }
+    intern, bob, dormant = principals["intern"], principals["bob"], principals["dormant"]
+    # The planted escalation story: intern can mint bob's (admin) credentials.
+    assert intern.blast_radius_score is not None and intern.blast_radius_score > 0
+    assert bob.blast_radius_score is not None and bob.blast_radius_score > 0
+    # A principal with no policies/activity at all stays at zero blast radius.
+    assert dormant.blast_radius_score == 0
+
+    escalation = next(
+        f
+        for f in db_session.scalars(select(Finding).where(Finding.run_id == run.id)).all()
+        if f.check_id == "iam.escalation.passrole_createkey" and f.principal_uid.endswith(":user/intern")
+    )
+    assert escalation.evidence.get("graph_path", [""])[-1].endswith(":user/bob")
+    assert escalation.evidence.get("graph_path_via") == "iam:CreateAccessKey"
 
 
 def test_rescan_moto_reuses_finding_groups(db_session) -> None:
