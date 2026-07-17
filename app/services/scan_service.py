@@ -1,8 +1,20 @@
 """ScanService — orchestrates one scan: ingest -> analyze -> persist (§3.2, §11).
 
-Phase 0 runs synchronously in-process (``SYNC_JOBS``). Phase 2 wraps this same
-``execute_scan`` body in an RQ job with Redis-backed progress; the persistence
-and correlation logic here is unchanged by that move.
+Two entry points share one execution body (``execute_scan``):
+
+- ``run_scan`` — synchronous: create the Run and execute it in this thread,
+  same session throughout. Used by the CLI and most tests.
+- ``enqueue_scan`` (Phase 2 Slice 3) — asynchronous: create the Run (committed,
+  status ``queued``) and hand ``execute_scan`` to the background job queue
+  (§3.3.4, ``app.jobs``), returning the run id immediately without waiting for
+  it to finish. The web app's Connect wizard and "Scan now" use this one so
+  the request doesn't block on a multi-second scan; a Runs-page poller watches
+  the row advance through queued -> ingesting -> analyzing -> completed/failed.
+
+Swapping the job queue for an RQ-backed one later (§3.3.4's documented,
+not-yet-built seam) would change nothing in this module — ``execute_scan`` is
+already the self-contained job body that a worker process would import and
+call.
 """
 
 from __future__ import annotations
@@ -14,12 +26,14 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.analysis.engine import AnalysisResult, run_analysis
+from app.db import session_scope
 from app.domain.enums import RunStatus, Severity
 from app.domain.fingerprint import fingerprint
 from app.domain.records import NormalizedDataset, Thresholds
 from app.domain.timeutil import to_iso
 from app.ingestion import get_adapter, normalize
 from app.ingestion.base import ProgressReporter
+from app.jobs import get_job_queue
 from app.models import (
     Account,
     Finding,
@@ -38,19 +52,17 @@ class ScanError(RuntimeError):
     """Raised when a scan fails; the Run row is marked ``failed`` first."""
 
 
-def run_scan(
+def _create_run(
     session: Session,
     account_id: int,
     *,
-    thresholds: Thresholds | None = None,
-    trigger: str = "manual",
-    triggered_by: int | None = None,
+    thresholds: Thresholds | None,
+    trigger: str,
+    triggered_by: int | None,
 ) -> Run:
-    """Create and execute a scan for ``account_id``, returning the completed Run."""
     account = session.get(Account, account_id)
     if account is None:
         raise ScanError(f"Account {account_id} not found")
-
     thresholds = thresholds or Thresholds.from_dict(account.source_config or {})
     run = Run(
         account_id=account.id,
@@ -61,15 +73,96 @@ def run_scan(
     )
     session.add(run)
     session.flush()
+    return run
+
+
+def run_scan(
+    session: Session,
+    account_id: int,
+    *,
+    thresholds: Thresholds | None = None,
+    trigger: str = "manual",
+    triggered_by: int | None = None,
+) -> Run:
+    """Create and execute a scan for ``account_id`` synchronously, returning the
+    completed Run. Blocks until the scan finishes — used by the CLI and tests;
+    the web app uses ``enqueue_scan`` instead so a request never blocks on it."""
+    run = _create_run(
+        session, account_id, thresholds=thresholds, trigger=trigger, triggered_by=triggered_by
+    )
+    return execute_scan(session, run.id)
+
+
+def enqueue_scan(
+    account_id: int,
+    *,
+    thresholds: Thresholds | None = None,
+    trigger: str = "manual",
+    triggered_by: int | None = None,
+) -> int:
+    """Create a queued Run and hand its execution to the background job queue,
+    returning the run's id immediately without waiting for it to finish.
+
+    Deliberately self-contained (owns its own session rather than taking the
+    caller's) because ``execute_scan`` runs on a *different thread* after this
+    returns: the Run — and the Account it points at — must already be
+    committed before the job starts, or the worker thread's own fresh session
+    won't see them yet. Callers must therefore ensure ``account_id`` refers to
+    an already-committed account (true for both the web routes, which create/
+    fetch the account in a prior, already-closed ``session_scope``, and the
+    CLI/scheduler, which never share an open transaction with this call).
+    """
+    with session_scope() as session:
+        run = _create_run(
+            session, account_id, thresholds=thresholds, trigger=trigger, triggered_by=triggered_by
+        )
+        run_id = run.id
+
+    def _job() -> None:
+        # Deliberately not `with session_scope(), contextlib.suppress(ScanError)`:
+        # suppress() would absorb the exception before session_scope's own
+        # generator ever sees it, so its `except Exception: rollback()` branch
+        # never runs and it commits instead — harmless here (execute_scan
+        # already committed the failure state itself before re-raising) but
+        # too subtle to rely on. Explicit nesting keeps the intent obvious.
+        with session_scope() as job_session:
+            try:  # noqa: SIM105 — see comment above on why not suppress()
+                execute_scan(job_session, run_id)
+            except ScanError:
+                pass  # execute_scan already recorded the failure on the Run row
+
+    get_job_queue().submit(_job)
+    return run_id
+
+
+def execute_scan(session: Session, run_id: int) -> Run:
+    """Execute an already-created (queued) Run to completion: ingest -> analyze
+    -> persist. This is the body both ``run_scan`` (same thread) and
+    ``enqueue_scan``'s background job (a fresh session on a worker thread) call
+    — only the caller differs, not this function.
+
+    Progress/status updates ``session.commit()`` (not just ``flush()``) at each
+    checkpoint so a concurrent poller — a *different* session, possibly on a
+    different thread — sees "ingesting" / "analyzing" / percentage as they
+    happen rather than only the final state once this whole call returns.
+    """
+    run = session.get(Run, run_id)
+    if run is None:
+        raise ScanError(f"Run {run_id} not found")
+    account = session.get(Account, run.account_id)
+    if account is None:
+        raise ScanError(f"Account {run.account_id} not found")
+    thresholds = Thresholds.from_dict(run.thresholds)
 
     def _progress(pct: int, stage: str) -> None:
         run.progress_pct = pct
         run.progress_stage = stage
-        session.flush()
+        session.commit()
 
     reporter = ProgressReporter(_progress)
     started = time.monotonic()
     run.started_at = now_iso()
+    run.status = RunStatus.INGESTING.value
 
     try:
         dataset = _ingest(account, reporter)
@@ -90,12 +183,12 @@ def run_scan(
         run.status = RunStatus.FAILED.value
         run.error_message = str(exc)
         run.finished_at = now_iso()
-        session.flush()
+        session.commit()
         raise ScanError(str(exc)) from exc
 
     run.finished_at = now_iso()
     run.duration_ms = int((time.monotonic() - started) * 1000)
-    session.flush()
+    session.commit()
     return run
 
 

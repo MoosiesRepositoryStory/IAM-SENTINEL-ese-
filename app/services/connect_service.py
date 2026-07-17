@@ -1,11 +1,17 @@
 """Connect-account orchestration for the web wizard (§5.3).
 
-Wraps ``create_account`` + ``run_scan`` behind one call with the same
-per-method validation a real cloud-onboarding form would do, so the wizard's
-"Assume Role (simulated)" path can genuinely reject a malformed ARN before
-ever touching the (mocked) scan — a deliberate showpiece of onboarding UX,
-per the spec, even though it transparently maps to the same moto org as the
-one-click demo path.
+Wraps ``create_account`` behind the same per-method validation a real
+cloud-onboarding form would do, so the wizard's "Assume Role (simulated)"
+path can genuinely reject a malformed ARN before an account (or a scan) is
+ever created — a deliberate showpiece of onboarding UX, per the spec, even
+though it transparently maps to the same moto org as the one-click demo path.
+
+Scanning is deliberately NOT done here (Phase 2 Slice 3): kicking off the scan
+via ``enqueue_scan`` is the caller's job, and it must happen *after* this
+function's account-creation transaction has committed — ``enqueue_scan`` owns
+its own session and hands execution to a background thread that needs to see
+a durably-committed Account row the moment it starts, not one still sitting in
+this call's open transaction. See ``enqueue_scan``'s docstring.
 """
 
 from __future__ import annotations
@@ -16,9 +22,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.domain.records import Thresholds
-from app.models import Run
 from app.services.account_service import create_account
-from app.services.scan_service import ScanError, run_scan
 
 CONNECTION_METHODS = ("demo", "assume_role", "upload")
 
@@ -26,8 +30,9 @@ _ROLE_ARN_RE = re.compile(r"^arn:aws:iam::\d{12}:role/[\w+=,.@-]+$")
 
 
 class ConnectError(RuntimeError):
-    """Bad wizard input or a failed scan; the caller re-renders the wizard with
-    this message rather than a raw 500."""
+    """Bad wizard input; the caller re-renders the wizard with this message
+    rather than a raw 500. Only covers validation now — a scan-execution
+    failure surfaces later as a ``failed`` Run on the Runs page, not here."""
 
 
 def connect_account(
@@ -42,7 +47,10 @@ def connect_account(
     policies_json: str | None = None,
     logs_text: str | None = None,
     actor_id: int | None = None,
-) -> Run:
+) -> int:
+    """Validate wizard input and create the account, returning its id. Does
+    NOT scan — call ``enqueue_scan(account_id, ...)`` after this call's session
+    has committed."""
     name = (name or "").strip()
     if not name:
         raise ConnectError("Account name is required.")
@@ -84,7 +92,4 @@ def connect_account(
         source_config=source_config,
         created_by=actor_id,
     )
-    try:
-        return run_scan(session, account.id, thresholds=thresholds, triggered_by=actor_id)
-    except ScanError as exc:
-        raise ConnectError(f"Scan failed: {exc}") from exc
+    return account.id

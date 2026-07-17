@@ -37,7 +37,8 @@ from app.services.finding_query import (
     query_findings,
     sort_to_query,
 )
-from app.services.scan_service import ScanError, run_scan
+from app.services.run_query import get_run_row, list_runs
+from app.services.scan_service import enqueue_scan
 from app.services.workflow_service import (
     STATUS_LABELS,
     InvalidTransition,
@@ -78,16 +79,19 @@ COLUMNS: list[dict[str, str | bool]] = [
 _DEFAULT_COLS: list[str] = [str(c["key"]) for c in COLUMNS if c["default"]]
 
 
+def _current_completed_run_id(session) -> int | None:  # noqa: ANN001
+    return session.scalar(select(Run.id).where(Run.status == "completed").order_by(Run.id.desc()))
+
+
 def _current_account(session) -> Account | None:  # noqa: ANN001
     """No account switcher exists yet (Slice 2) — "current" means the account
     behind the most recently *completed* run (whatever was just connected or
     re-scanned), falling back to the newest-created account if nothing has
     been scanned yet."""
-    latest_run = session.scalar(
-        select(Run).where(Run.status == "completed").order_by(Run.id.desc())
-    )
-    if latest_run is not None:
-        return session.get(Account, latest_run.account_id)
+    run_id = _current_completed_run_id(session)
+    if run_id is not None:
+        run = session.get(Run, run_id)
+        return session.get(Account, run.account_id)
     return session.scalar(select(Account).order_by(Account.id.desc()))
 
 
@@ -206,10 +210,13 @@ def connect_account_route() -> Response | str | tuple[str, int]:
     role_arn = request.form.get("role_arn", "")
     external_id = request.form.get("external_id", "")
     thresholds = _parse_thresholds()
+    account_id: int | None = None
+    actor_id: int | None = None
     with session_scope() as session:
         actor = _current_user(session)
+        actor_id = actor.id
         try:
-            connect_account(
+            account_id = connect_account(
                 session,
                 name=name,
                 method=method,
@@ -226,9 +233,11 @@ def connect_account_route() -> Response | str | tuple[str, int]:
             current = _current_account(session)
             current_id = current.id if current is not None else None
             _expunge_account_rows(session, rows)
-            # Route.ARN/upload validation errors live on step 2's fields; name and
-            # scan-execution errors are only visible on step 3 — reopen wherever the
-            # bad field actually is rather than always landing on step 3.
+            # ARN/upload validation errors live on step 2's fields; a missing
+            # name is only visible on step 3 — reopen wherever the bad field
+            # actually is rather than always landing on step 3. (connect_account
+            # only ever raises for input validation now — a scan-execution
+            # failure surfaces later as a `failed` Run on the Runs page, not here.)
             msg = str(exc)
             wizard_step = 2 if ("Role ARN" in msg or "Upload at least" in msg) else 3
             return render_template(
@@ -244,34 +253,62 @@ def connect_account_route() -> Response | str | tuple[str, int]:
                     "role_arn": role_arn, "external_id": external_id,
                 },
             ), 400
-    return cast(Response, redirect(url_for("web.findings")))
+    # The account row is committed now (the `with` block above closed) — safe to
+    # hand off to the background job queue, whose worker thread opens its own
+    # fresh session and needs to see it immediately.
+    run_id = enqueue_scan(account_id, thresholds=thresholds, trigger="manual", triggered_by=actor_id)
+    return cast(Response, redirect(url_for("web.runs", highlight=run_id)))
 
 
 @bp.post("/accounts/<int:account_id>/scan")
-def rescan_account(account_id: int) -> Response | str | tuple[str, int]:
+def rescan_account(account_id: int) -> Response:
     """Re-scan an existing account with its saved thresholds (§5.3 step 5's
-    "Scan now" — this is what makes ``_current_account`` point at it again)."""
+    "Scan now"), via the background job queue — lands on the Runs page to
+    watch it progress rather than Findings, which would still show the
+    *previous* scan's results until this one actually completes."""
     with session_scope() as session:
         account = session.get(Account, account_id)
         if account is None:
             abort(404)
         actor = _current_user(session)
+        actor_id = actor.id
         thresholds = Thresholds.from_dict(account.source_config or {})
-        try:
-            run_scan(session, account.id, thresholds=thresholds, triggered_by=actor.id)
-        except ScanError as exc:
-            rows = list_accounts(session)
-            current = _current_account(session)
-            current_id = current.id if current is not None else None
-            _expunge_account_rows(session, rows)
-            return render_template(
-                "accounts.html",
-                rows=rows,
-                current_account_id=current_id,
-                default_thresholds=Thresholds().to_dict(),
-                error=f"Re-scan failed: {exc}",
-            ), 400
-    return cast(Response, redirect(url_for("web.findings")))
+    run_id = enqueue_scan(account_id, thresholds=thresholds, trigger="manual", triggered_by=actor_id)
+    return cast(Response, redirect(url_for("web.runs", highlight=run_id)))
+
+
+# -- Runs page + live progress polling (§8.10, Slice 3) ----------------------
+
+
+@bp.get("/runs")
+def runs() -> Response | str:
+    with session_scope() as session:
+        rows = list_runs(session)
+        current_run_id = _current_completed_run_id(session)
+        for row in rows:
+            session.expunge(row.run)
+    highlight_id = request.args.get("highlight", type=int)
+    return render_template(
+        "runs.html", rows=rows, current_run_id=current_run_id, highlight_id=highlight_id
+    )
+
+
+@bp.get("/runs/<int:run_id>/progress")
+def run_progress(run_id: int) -> Response | str:
+    """Poll target for one Runs-page row: htmx re-fetches this on an interval
+    until the row it gets back is terminal (completed/failed/canceled) and
+    stops including its own poll trigger — at which point htmx has nothing
+    left to re-fire and simply stops. No custom JS needed for this."""
+    with session_scope() as session:
+        row = get_run_row(session, run_id)
+        if row is None:
+            abort(404)
+        current_run_id = _current_completed_run_id(session)
+        session.expunge(row.run)
+    highlight_id = request.args.get("highlight", type=int)
+    return render_template(
+        "partials/run_row.html", row=row, current_run_id=current_run_id, highlight_id=highlight_id
+    )
 
 
 def _render_drawer(session, group_id: int, **extra) -> str:  # noqa: ANN001, ANN003

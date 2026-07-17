@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% set active_nav = 'runs' %}
+{% block title %}Runs · IAM Sentinel{% endblock %}
+{% block crumb %}<b>Runs</b>{% endblock %}
+
+{% block main %}
+<div class="page-head"><h1>Runs</h1></div>
+<p class="page-sub">Scan execution history across all connected accounts. A queued or running scan updates live below.</p>
+
+{% if rows %}
+<div class="table-wrap">
+  <div class="tbl-scroll">
+  <table class="findings runs">
+    <thead>
+      <tr>
+        <th>Account</th>
+        <th>Trigger</th>
+        <th>Status</th>
+        <th>Progress</th>
+        <th>Started</th>
+        <th class="num">Duration</th>
+        <th class="num">Score</th>
+        <th class="num">Findings</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+        {% include "partials/run_row.html" %}
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% else %}
+<div class="empty">
+  <div class="big">↻</div>
+  <h2>No scans yet</h2>
+  <p>Connect an account to run your first scan.</p>
+</div>
+{% endif %}
+{% endblock %}

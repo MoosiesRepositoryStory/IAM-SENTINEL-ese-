@@ -1,4 +1,10 @@
-"""Connect-account wizard orchestration tests (§5.3, Phase 2 Slice 2)."""
+"""Connect-account wizard orchestration tests (§5.3, Phase 2 Slice 2).
+
+``connect_account`` only validates + creates the account as of Slice 3 —
+scanning is a separate, caller-driven ``enqueue_scan`` call (see
+test_scan_service.py for that half). These tests cover validation and that
+the right account shape gets created for each connection method.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +12,7 @@ from pathlib import Path
 
 import pytest
 from app.domain.records import Thresholds
+from app.models import Account
 from app.services.account_service import list_accounts
 from app.services.connect_service import ConnectError, connect_account
 
@@ -35,45 +42,42 @@ def test_upload_requires_at_least_one_file(db_session) -> None:
         connect_account(db_session, name="Acme", method="upload", thresholds=Thresholds())
 
 
-@pytest.mark.integration
-def test_demo_method_connects_and_scans(db_session) -> None:
-    pytest.importorskip("boto3")
-    pytest.importorskip("moto")
-    run = connect_account(db_session, name="Acme Corp Demo", method="demo", thresholds=Thresholds())
-    assert run.status == "completed"
-    assert run.account.source_type == "moto_aws"
-    assert run.summary is not None and run.summary.total_findings > 20
+def test_demo_method_creates_a_moto_account(db_session) -> None:
+    account_id = connect_account(
+        db_session, name="Acme Corp Demo", method="demo", thresholds=Thresholds()
+    )
+    account = db_session.get(Account, account_id)
+    assert account is not None
+    assert account.source_type == "moto_aws"
 
 
-@pytest.mark.integration
 def test_assume_role_method_maps_to_moto_and_records_metadata(db_session) -> None:
-    pytest.importorskip("boto3")
-    pytest.importorskip("moto")
-    run = connect_account(
+    account_id = connect_account(
         db_session, name="Acme Prod", method="assume_role", thresholds=Thresholds(),
         role_arn="arn:aws:iam::123456789012:role/SentinelReadOnly", external_id="a1b2c3d4",
     )
-    assert run.status == "completed"
-    account = run.account
+    account = db_session.get(Account, account_id)
+    assert account is not None
     assert account.source_type == "moto_aws"
     assert account.external_id == "a1b2c3d4"
     assert account.source_config["role_arn"] == "arn:aws:iam::123456789012:role/SentinelReadOnly"
     assert account.source_config["simulated"] is True
 
 
-def test_upload_method_scans_sample_files(db_session) -> None:
-    run = connect_account(
+def test_upload_method_creates_a_file_account(db_session) -> None:
+    account_id = connect_account(
         db_session, name="Acme Files", method="upload", thresholds=Thresholds(),
         inventory_text=(_SAMPLES / "users.csv").read_text(encoding="utf-8"),
         policies_json=(_SAMPLES / "policies.json").read_text(encoding="utf-8"),
         logs_text=(_SAMPLES / "auth.log").read_text(encoding="utf-8"),
     )
-    assert run.status == "completed"
-    assert run.account.source_type == "file"
-    assert run.summary is not None and run.summary.total_findings > 10
+    account = db_session.get(Account, account_id)
+    assert account is not None
+    assert account.source_type == "file"
+    assert account.source_config["inventory_text"]
 
 
-def test_list_accounts_reflects_latest_run(db_session) -> None:
+def test_list_accounts_reflects_no_run_before_a_scan_is_enqueued(db_session) -> None:
     connect_account(
         db_session, name="Acme Files", method="upload", thresholds=Thresholds(),
         inventory_text=(_SAMPLES / "users.csv").read_text(encoding="utf-8"),
@@ -81,6 +85,4 @@ def test_list_accounts_reflects_latest_run(db_session) -> None:
     rows = list_accounts(db_session)
     assert len(rows) == 1
     assert rows[0].account.name == "Acme Files"
-    assert rows[0].latest_run is not None
-    assert rows[0].latest_run.status == "completed"
-    assert rows[0].total_findings is not None
+    assert rows[0].latest_run is None

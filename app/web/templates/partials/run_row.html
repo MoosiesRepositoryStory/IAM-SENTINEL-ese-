@@ -1,0 +1,45 @@
+{# One Runs-page row (§8.10). Reused three ways: inline-included per row on the
+   full page load, returned whole by GET /runs/<id>/progress as the htmx poll
+   target, and — implicitly — as its own replacement on every poll tick. A
+   non-terminal run re-includes its own hx-poll attributes; a terminal one
+   (completed/failed/canceled) omits them, which is what makes htmx stop
+   polling — no client-side "is it done yet" logic needed. #}
+{% set terminal = row.run.status in ('completed', 'failed', 'canceled') %}
+<tr id="run-row-{{ row.run.id }}" class="{{ 'run-highlight' if highlight_id == row.run.id }}"
+    {% if not terminal %}
+    {# Carry ?highlight= forward on every poll — otherwise the row that
+       started highlighted loses it the instant the first poll tick swaps it
+       out for a fresh (un-highlighted) render. #}
+    hx-get="{{ url_for('web.run_progress', run_id=row.run.id, highlight=highlight_id) if highlight_id else url_for('web.run_progress', run_id=row.run.id) }}"
+    hx-trigger="load, every 1500ms"
+    hx-target="this"
+    hx-swap="outerHTML"
+    {% endif %}>
+  <td>
+    <div class="title-cell">{{ row.account_name }}</div>
+  </td>
+  <td class="mono">{{ row.run.trigger }}</td>
+  <td><span class="status st-{{ row.run.status }}">{{ row.run.status }}</span></td>
+  <td>
+    {% if not terminal %}
+      <div class="progress-bar"><div class="progress-fill" style="width:{{ row.run.progress_pct }}%"></div></div>
+      <span class="progress-stage">{{ row.run.progress_stage or '…' }} · {{ row.run.progress_pct }}%</span>
+    {% elif row.run.status == 'failed' %}
+      <span class="muted" title="{{ row.run.error_message }}">{{ row.run.error_message or 'Scan failed' }}</span>
+    {% else %}
+      <span class="muted">—</span>
+    {% endif %}
+  </td>
+  <td class="mono">{{ (row.run.started_at or '')[:16] or '—' }}</td>
+  <td class="num">{{ '%.1fs' | format(row.run.duration_ms / 1000) if row.run.duration_ms else '—' }}</td>
+  <td class="num">{{ row.run.composite_score if row.run.composite_score is not none else '—' }}</td>
+  <td class="num">
+    {{ row.total_findings if row.total_findings is not none else '—' }}
+    {% if row.critical_count %}<span class="pill sev-CRITICAL" style="margin-left:6px"><span class="dot"></span>{{ row.critical_count }}</span>{% endif %}
+  </td>
+  <td>
+    {% if row.run.id == current_run_id %}
+    <a class="btn ghost tiny" href="{{ url_for('web.findings') }}">View findings</a>
+    {% endif %}
+  </td>
+</tr>

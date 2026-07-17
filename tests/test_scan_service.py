@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from app.models import Finding, FindingGroup, RunSummary
-from app.services import create_account, run_scan
+from app.db import session_scope
+from app.jobs import get_job_queue, set_job_queue
+from app.models import Finding, FindingGroup, Run, RunSummary
+from app.services import create_account, enqueue_scan, run_scan
 from sqlalchemy import select
 
 pytestmark = pytest.mark.integration
@@ -81,3 +85,97 @@ def test_rescan_reuses_finding_groups(db_session) -> None:
     assert ids_1 == ids_2
     for g in groups_after_2:
         assert g.last_seen_run == run2.id
+
+
+# -- enqueue_scan / background execution (Phase 2 Slice 3, §3.3.4) ----------
+
+
+class _RecordingJobQueue:
+    """Captures submitted jobs without running them, so a test can assert what
+    state exists *before* execution, then run the captured job itself."""
+
+    def __init__(self) -> None:
+        self.jobs: list[Callable[[], None]] = []
+
+    def submit(self, fn: Callable[[], None]) -> None:
+        self.jobs.append(fn)
+
+
+@pytest.fixture
+def job_queue_spy():
+    original = get_job_queue()
+    spy = _RecordingJobQueue()
+    set_job_queue(spy)
+    try:
+        yield spy
+    finally:
+        set_job_queue(original)
+
+
+def _create_committed_file_account(session, name: str = "Acme Corp (async)"):
+    account = create_account(
+        session,
+        name=name,
+        source_type="file",
+        source_config={
+            "inventory_path": str(_SAMPLES / "users.csv"),
+            "policies_path": str(_SAMPLES / "policies.json"),
+            "logs_path": str(_SAMPLES / "auth.log"),
+        },
+    )
+    # enqueue_scan opens its own session and must see this row already
+    # committed — mirrors what the web routes do across two closed sessions.
+    session.commit()
+    return account
+
+
+def test_enqueue_scan_returns_before_the_job_runs(db_session, job_queue_spy) -> None:
+    """enqueue_scan creates a queued Run and hands it to the job queue WITHOUT
+    running it inline — proven with a spy queue that records the submitted job
+    instead of executing it: the Run is still `queued` and nothing has been
+    persisted right after enqueue_scan returns. Running the captured job by
+    hand is exactly what the background thread would do, and drives the same
+    Run to completion — proving the submitted job really is the scan body."""
+    account = _create_committed_file_account(db_session)
+    run_id = enqueue_scan(account.id)
+
+    assert len(job_queue_spy.jobs) == 1
+    with session_scope() as session:
+        run = session.get(Run, run_id)
+        assert run is not None
+        assert run.status == "queued"
+        assert run.progress_pct == 0
+        assert session.scalars(select(Finding).where(Finding.run_id == run_id)).first() is None
+
+    job_queue_spy.jobs[0]()
+
+    with session_scope() as session:
+        run = session.get(Run, run_id)
+        assert run is not None
+        assert run.status == "completed"
+        assert run.composite_score is not None
+
+
+def test_enqueue_scan_real_threading_executor_drives_it_to_completion(db_session) -> None:
+    """End-to-end against the actual default ThreadingJobQueue (no spy): the
+    scan genuinely runs on a background thread and eventually completes,
+    observed only by polling a fresh session — the same thing the Runs page's
+    htmx polling does over HTTP."""
+    account = _create_committed_file_account(db_session, name="Acme Corp (real thread)")
+    run_id = enqueue_scan(account.id)
+
+    deadline = time.monotonic() + 10
+    status: str | None = None
+    while time.monotonic() < deadline:
+        with session_scope() as session:
+            run = session.get(Run, run_id)
+            status = run.status if run is not None else None
+        if status in ("completed", "failed"):
+            break
+        time.sleep(0.05)
+
+    assert status == "completed"
+    with session_scope() as session:
+        summary = session.get(RunSummary, run_id)
+        assert summary is not None
+        assert summary.total_findings > 10

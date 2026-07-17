@@ -624,3 +624,20 @@ input[type="file"].text-input, input[type="file"] {
 .method-head { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; margin-bottom: 4px; }
 .method-card p { margin: 0; font-size: 12px; color: var(--text-muted); line-height: 1.5; }
 .method-fields { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); cursor: default; }
+
+/* ---- Runs page + live progress (§8.10, Slice 3) ---- */
+.status.st-queued { color: var(--text-muted); }
+.status.st-ingesting, .status.st-analyzing { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.status.st-completed { color: var(--sev-low); border-color: color-mix(in srgb, var(--sev-low) 40%, transparent); }
+.status.st-failed { color: var(--sev-critical); border-color: color-mix(in srgb, var(--sev-critical) 40%, transparent); }
+.status.st-canceled { color: var(--text-faint); }
+
+.progress-bar {
+  width: 130px; height: 6px; border-radius: 999px; background: var(--bg-elev-2);
+  border: 1px solid var(--border); overflow: hidden;
+}
+.progress-fill { height: 100%; background: var(--accent); transition: width .4s ease; }
+.progress-stage { display: block; margin-top: 4px; font-size: 11px; color: var(--text-faint); white-space: nowrap; }
+
+tr.run-highlight { background: var(--accent-soft); }
+tr.run-highlight:hover { background: var(--accent-soft); }

@@ -11,8 +11,6 @@
 </div>
 <p class="page-sub">Cloud environments connected to IAM Sentinel. Each scan snapshots identities, policies, and auth activity for analysis.</p>
 
-{% if error and not wizard_open %}<div class="wizard-error" style="margin:0 0 14px">{{ error }}</div>{% endif %}
-
 {% if rows %}
 <div class="table-wrap">
   <div class="tbl-scroll">
@@ -43,7 +41,7 @@
         <td class="mono">
           {% if row.latest_run %}
             {{ (row.latest_run.finished_at or row.latest_run.started_at or '')[:10] or '—' }}
-            <span class="status st-{{ 'resolved' if row.latest_run.status == 'completed' else ('open' if row.latest_run.status == 'failed' else '') }}">{{ row.latest_run.status }}</span>
+            <span class="status st-{{ row.latest_run.status }}">{{ row.latest_run.status }}</span>
           {% else %}
             never scanned
           {% endif %}
@@ -57,9 +55,10 @@
           <form method="post" action="{{ url_for('web.rescan_account', account_id=row.account.id) }}" style="display:inline">
             <button type="submit" class="btn ghost tiny">Scan now</button>
           </form>
-          {% if row.account.id == current_account_id and row.latest_run %}
+          {% if row.account.id == current_account_id and row.latest_run and row.latest_run.status == 'completed' %}
           <a class="btn ghost tiny" href="{{ url_for('web.findings') }}">View findings</a>
           {% endif %}
+          <a class="btn ghost tiny" href="{{ url_for('web.runs') }}">Runs</a>
         </td>
       </tr>
       {% endfor %}
