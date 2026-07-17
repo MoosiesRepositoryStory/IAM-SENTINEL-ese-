@@ -11,6 +11,7 @@ from flask import Flask
 
 from app.config import get_settings
 from app.db import init_engine
+from app.scheduler import start_scheduler
 
 
 def create_app() -> Flask:
@@ -22,5 +23,12 @@ def create_app() -> Flask:
     from app.web.views import bp
 
     app.register_blueprint(bp)
+
+    # Recurring scans + the daily exception-expiry job (§5.5 / §11.4, Slice 5).
+    # start_scheduler() is idempotent, so this is safe even if create_app() is
+    # ever called more than once in a process. Not called from anywhere in the
+    # CLI (app/cli.py never imports create_app), so `iam-sentinel scan` stays a
+    # one-shot command with no background thread — only the web app runs one.
+    start_scheduler()
 
     return app

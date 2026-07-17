@@ -39,6 +39,12 @@ dev = [
     # (they skip gracefully if boto3/moto are absent).
     "boto3>=1.34",
     "moto>=5.0",
+    # Real recurring-scan + exception-expiry scheduling (Phase 2 Slice 5) uses
+    # APScheduler for real, unlike the RQ/Redis half of the `jobs` extra above,
+    # which stays documented-not-built per the in-process execution decision
+    # (see app/scheduler.py). Declared here (not just in `jobs`) so dev/CI
+    # actually exercises it; tests skip gracefully if it's absent.
+    "APScheduler>=3.10",
 ]
 
 [project.scripts]

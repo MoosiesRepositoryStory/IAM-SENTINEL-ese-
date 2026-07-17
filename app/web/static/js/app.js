@@ -754,6 +754,58 @@ window.Sentinel = (function () {
     }
   }
 
+  // ------------------------------------------------------- schedule editor --
+  // §5.5 / §11.4, Slice 5: one shared modal for every account's recurring-scan
+  // settings, driven the same way the command palette overlay is (plain JS,
+  // display:none toggle) rather than a second Alpine component — its content
+  // is set fresh from the clicked row's data-schedule attribute on each open,
+  // so there is no per-row state to keep in sync.
+  function scheduleModalEl() { return document.getElementById('schedule-modal'); }
+  function scheduleKeydown(evt) {
+    if (evt.key === 'Escape') { evt.preventDefault(); closeScheduleModal(); }
+  }
+  function openScheduleModal(data) {
+    const modal = scheduleModalEl();
+    const form = document.getElementById('schedule-form');
+    form.action = `/accounts/${data.account_id}/schedule`;
+    modal.dataset.accountId = data.account_id;
+    document.getElementById('schedule-account-name').textContent = data.account_name || '';
+    document.getElementById('schedule-cron-input').value = data.cron || '';
+    document.getElementById('schedule-enabled-input').checked = data.enabled !== false;
+
+    const info = document.getElementById('schedule-run-info');
+    if (data.exists) {
+      const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : 'never');
+      info.textContent = `Last run: ${fmt(data.last_run_at)} · Next run: ${data.next_run_at ? fmt(data.next_run_at) : '—'}`;
+    } else {
+      info.textContent = 'No recurring scan configured yet — saving will create one.';
+    }
+    document.getElementById('schedule-delete-btn').style.display = data.exists ? '' : 'none';
+    document.getElementById('schedule-runnow-btn').style.display = data.exists ? '' : 'none';
+
+    modal.style.display = 'flex';
+    document.addEventListener('keydown', scheduleKeydown);
+  }
+  function closeScheduleModal() {
+    const modal = scheduleModalEl();
+    if (!modal) return;
+    modal.style.display = 'none';
+    document.removeEventListener('keydown', scheduleKeydown);
+  }
+  function deleteScheduleFromModal() {
+    if (!window.confirm('Delete this recurring scan?')) return;
+    const accountId = scheduleModalEl().dataset.accountId;
+    const form = document.getElementById('schedule-form');
+    form.action = `/accounts/${accountId}/schedule/delete`;
+    form.submit();
+  }
+  function runScheduleNowFromModal() {
+    const accountId = scheduleModalEl().dataset.accountId;
+    const form = document.getElementById('schedule-form');
+    form.action = `/accounts/${accountId}/schedule/run-now`;
+    form.submit();
+  }
+
   // -------------------------------------------------------------------- init --
   function init() {
     document.addEventListener('keydown', onKeydown);
@@ -801,6 +853,7 @@ window.Sentinel = (function () {
     onRowContextMenu, onMenuButtonClick, closeContextMenu,
     openPalette, closePalette, togglePalette, onPaletteInput,
     toggleCheatsheet, toast,
+    openScheduleModal, closeScheduleModal, deleteScheduleFromModal, runScheduleNowFromModal,
   };
 })();
 

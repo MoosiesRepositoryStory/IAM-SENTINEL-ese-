@@ -22,6 +22,7 @@
         <th>Last scan</th>
         <th class="num">Score</th>
         <th class="num">Findings</th>
+        <th>Schedule</th>
         <th></th>
       </tr>
     </thead>
@@ -50,6 +51,34 @@
         <td class="num">
           {{ row.total_findings if row.total_findings is not none else '—' }}
           {% if row.critical_count %}<span class="pill sev-CRITICAL" style="margin-left:6px"><span class="dot"></span>{{ row.critical_count }}</span>{% endif %}
+        </td>
+        <td>
+          <!-- §11.4's accounts-list "schedule badge". data-schedule feeds
+               Sentinel.openScheduleModal on click, rather than 6 separate
+               Alpine args, since the modal is a single shared component. -->
+          {% if row.schedule %}
+            <span class="chip {{ 'on' if row.schedule.enabled }}" title="{{ row.schedule.cron }}">
+              ⏱ {{ 'Scheduled' if row.schedule.enabled else 'Paused' }}
+            </span>
+          {% else %}
+            <span class="muted" style="font-size:11.5px">No schedule</span>
+          {% endif %}
+          <!-- Single-quoted: tojson's output is double-quoted JSON, which
+               would otherwise collide with a double-quoted HTML attribute
+               delimiter (tojson escapes ' as ', so this direction is safe). -->
+          <button type="button" class="btn ghost tiny" style="margin-left:6px"
+                  data-schedule='{{ {
+                    "account_id": row.account.id,
+                    "account_name": row.account.name,
+                    "exists": row.schedule is not none,
+                    "cron": row.schedule.cron if row.schedule else "",
+                    "enabled": row.schedule.enabled if row.schedule else true,
+                    "last_run_at": row.schedule.last_run_at if row.schedule else none,
+                    "next_run_at": row.schedule.next_run_at if row.schedule else none,
+                  } | tojson }}'
+                  onclick="Sentinel.openScheduleModal(JSON.parse(this.dataset.schedule))">
+            {{ 'Edit' if row.schedule else 'Schedule' }}
+          </button>
         </td>
         <td>
           <form method="post" action="{{ url_for('web.rescan_account', account_id=row.account.id) }}" style="display:inline">
@@ -146,8 +175,9 @@
         </label>
       </div>
 
-      <!-- Step 3 — Confirm & name. Scan schedule is deferred to Phase 2 Slice
-           5 (real APScheduler) — no UI for it yet, per the owner-approved slice plan. -->
+      <!-- Step 3 — Confirm & name. Recurring scan is optional (§5.3 step 3 /
+           §5.5) and reuses these SAME threshold fields for the schedule, so
+           the schedule and the account's first scan are never out of sync. -->
       <div x-show="step === 3">
         <label class="wfield">
           <span>Account name</span>
@@ -162,6 +192,18 @@
           <label class="wfield"><span>Key age threshold (days)</span><input type="number" name="key_age_days" class="text-input" value="{{ default_thresholds.key_age_days }}" min="1"></label>
           <label class="wfield"><span>Failed-login threshold</span><input type="number" name="failed_logins" class="text-input" value="{{ default_thresholds.failed_logins }}" min="1"></label>
         </div>
+        <label class="method-card" :class="{on: scheduleEnabled}" style="margin-top:14px">
+          <input type="checkbox" name="schedule_enabled" x-model="scheduleEnabled" class="sr-only">
+          <div class="method-head"><b>Recurring scan</b><span class="pi-soon">Optional</span></div>
+          <p>Re-scan this account automatically on a cron schedule, in addition to this first scan.</p>
+          <div class="method-fields" x-show="scheduleEnabled" @click.stop>
+            <label class="wfield">
+              <span>Cron expression</span>
+              <input type="text" name="schedule_cron" class="text-input mono" placeholder="0 2 * * *  (daily at 02:00)"
+                     value="{{ form_values.schedule_cron if form_values else '' }}">
+            </label>
+          </div>
+        </label>
       </div>
     </div>
 
@@ -177,13 +219,66 @@
 </div>
 </div>
 
+<!-- Schedule editor (§5.5 / §11.4, Slice 5): one shared modal driven by plain
+     JS (Sentinel.openScheduleModal/closeScheduleModal — same style as the
+     command palette overlay) rather than a second Alpine component, since its
+     state (which account, current cron/enabled/last-next-run) is set fresh on
+     every open from the clicked row's data-schedule attribute. -->
+<div id="schedule-modal" class="wizard-overlay" style="display:none" onclick="if (event.target === this) Sentinel.closeScheduleModal()">
+  <form id="schedule-form" class="wizard-panel" role="dialog" aria-label="Recurring scan" method="post" onclick="event.stopPropagation()">
+    <div class="wizard-head">
+      <b>Recurring scan · <span id="schedule-account-name"></span></b>
+      <button type="button" class="icon-btn drawer-close" aria-label="Close" onclick="Sentinel.closeScheduleModal()">✕</button>
+    </div>
+
+    {% if error and schedule_open_for %}<div class="wizard-error">{{ error }}</div>{% endif %}
+
+    <div class="wizard-body">
+      <label class="wfield">
+        <span>Cron expression</span>
+        <input type="text" name="cron" id="schedule-cron-input" class="text-input mono" placeholder="0 2 * * *  (daily at 02:00)">
+      </label>
+      <label class="wfield-inline">
+        <input type="checkbox" name="enabled" id="schedule-enabled-input" checked>
+        <span>Enabled</span>
+      </label>
+      <div id="schedule-run-info" class="dc-meta mono" style="margin-top:10px"></div>
+    </div>
+
+    <div class="wizard-foot">
+      <button type="button" class="btn ghost danger" id="schedule-delete-btn" style="display:none" onclick="Sentinel.deleteScheduleFromModal()">Delete</button>
+      <button type="button" class="btn ghost" id="schedule-runnow-btn" style="display:none" onclick="Sentinel.runScheduleNowFromModal()">Run now</button>
+      <div style="margin-left:auto; display:flex; gap:8px">
+        <button type="button" class="btn ghost" onclick="Sentinel.closeScheduleModal()">Cancel</button>
+        <button type="submit" class="btn primary">Save</button>
+      </div>
+    </div>
+  </form>
+</div>
+
 <script>
   document.addEventListener('alpine:init', () => {
     Alpine.data('wizard', () => ({
       show: {{ 'true' if wizard_open else 'false' }},
       step: {{ wizard_step | default(1) }},
       method: {{ (form_values.method if form_values else 'demo') | tojson }},
+      scheduleEnabled: {{ (form_values.schedule_enabled if form_values else false) | tojson }},
     }));
   });
+
+  {% if schedule_open_for %}
+  // A save_schedule validation error re-renders this page — reopen the SAME
+  // modal at the account it was editing, with what the user typed preserved,
+  // instead of silently discarding the error onto a closed modal.
+  Sentinel.openScheduleModal({
+    account_id: {{ schedule_open_for }},
+    account_name: {{ (rows | selectattr('account.id', 'equalto', schedule_open_for) | map(attribute='account.name') | first | default('')) | tojson }},
+    exists: {{ (schedule_form_values.exists if schedule_form_values else false) | tojson }},
+    cron: {{ (schedule_form_values.cron if schedule_form_values else '') | tojson }},
+    enabled: {{ (schedule_form_values.enabled if schedule_form_values else true) | tojson }},
+    last_run_at: null,
+    next_run_at: null,
+  });
+  {% endif %}
 </script>
 {% endblock %}

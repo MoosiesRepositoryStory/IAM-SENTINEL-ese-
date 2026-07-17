@@ -17,6 +17,7 @@ from app.db import session_scope
 from app.domain.records import Thresholds
 from app.models import Account, AppUser, Run
 from app.models.base import now_iso
+from app.scheduler import fire_schedule, remove_schedule_job, sync_schedule
 from app.services.account_service import list_accounts
 from app.services.bulk_service import bulk_assign, bulk_exception, bulk_transition
 from app.services.collaboration import CommentError, active_users, add_comment, assign
@@ -41,6 +42,12 @@ from app.services.finding_query import (
 )
 from app.services.run_query import get_run_row, list_runs, score_trend
 from app.services.scan_service import enqueue_scan
+from app.services.schedule_service import (
+    ScheduleError,
+    delete_schedule,
+    get_schedule,
+    upsert_schedule,
+)
 from app.services.workflow_service import (
     STATUS_LABELS,
     InvalidTransition,
@@ -164,6 +171,8 @@ def _expunge_account_rows(session, rows) -> None:  # noqa: ANN001
         session.expunge(row.account)
         if row.latest_run is not None:
             session.expunge(row.latest_run)
+        if row.schedule is not None:
+            session.expunge(row.schedule)
 
 
 def _parse_thresholds() -> Thresholds:
@@ -212,8 +221,11 @@ def connect_account_route() -> Response | str | tuple[str, int]:
     role_arn = request.form.get("role_arn", "")
     external_id = request.form.get("external_id", "")
     thresholds = _parse_thresholds()
+    schedule_enabled = request.form.get("schedule_enabled") == "on"
+    schedule_cron = request.form.get("schedule_cron", "")
     account_id: int | None = None
     actor_id: int | None = None
+    new_schedule_id: int | None = None
     with session_scope() as session:
         actor = _current_user(session)
         actor_id = actor.id
@@ -230,16 +242,32 @@ def connect_account_route() -> Response | str | tuple[str, int]:
                 logs_text=_read_upload("logs_file"),
                 actor_id=actor.id,
             )
-        except ConnectError as exc:
+            # Step 3's optional "recurring scan" fields (§5.3 step 3 / §5.5) —
+            # reuses the same thresholds just collected for the account, so the
+            # schedule and the account's default scan are never out of sync at
+            # creation time. Committed in the SAME transaction as the account
+            # (below), so either both exist or neither does.
+            if schedule_enabled:
+                new_schedule = upsert_schedule(
+                    session,
+                    account_id=account_id,
+                    cron=schedule_cron,
+                    thresholds=thresholds,
+                    enabled=True,
+                    actor_id=actor.id,
+                )
+                new_schedule_id = new_schedule.id
+        except (ConnectError, ScheduleError) as exc:
             rows = list_accounts(session)
             current = _current_account(session)
             current_id = current.id if current is not None else None
             _expunge_account_rows(session, rows)
             # ARN/upload validation errors live on step 2's fields; a missing
-            # name is only visible on step 3 — reopen wherever the bad field
-            # actually is rather than always landing on step 3. (connect_account
-            # only ever raises for input validation now — a scan-execution
-            # failure surfaces later as a `failed` Run on the Runs page, not here.)
+            # name or bad cron is only visible on step 3 — reopen wherever the
+            # bad field actually is rather than always landing on step 3.
+            # (connect_account/upsert_schedule only ever raise for input
+            # validation — a scan-execution failure surfaces later as a
+            # `failed` Run on the Runs page, not here.)
             msg = str(exc)
             wizard_step = 2 if ("Role ARN" in msg or "Upload at least" in msg) else 3
             return render_template(
@@ -253,11 +281,17 @@ def connect_account_route() -> Response | str | tuple[str, int]:
                 form_values={
                     "name": name, "method": method,
                     "role_arn": role_arn, "external_id": external_id,
+                    "schedule_enabled": schedule_enabled, "schedule_cron": schedule_cron,
                 },
             ), 400
-    # The account row is committed now (the `with` block above closed) — safe to
-    # hand off to the background job queue, whose worker thread opens its own
-    # fresh session and needs to see it immediately.
+    # The account (+ schedule, if any) row is committed now (the `with` block
+    # above closed) — safe to hand off to the background job queue, whose
+    # worker thread opens its own fresh session and needs to see it
+    # immediately, and to register the new schedule with the live in-process
+    # scheduler (an in-process side effect, deliberately done only after the
+    # DB row it reads back on every fire is durable).
+    if new_schedule_id is not None:
+        sync_schedule(new_schedule_id, cron=schedule_cron, enabled=True)
     run_id = enqueue_scan(account_id, thresholds=thresholds, trigger="manual", triggered_by=actor_id)
     return cast(Response, redirect(url_for("web.runs", highlight=run_id)))
 
@@ -276,6 +310,78 @@ def rescan_account(account_id: int) -> Response:
         actor_id = actor.id
         thresholds = Thresholds.from_dict(account.source_config or {})
     run_id = enqueue_scan(account_id, thresholds=thresholds, trigger="manual", triggered_by=actor_id)
+    return cast(Response, redirect(url_for("web.runs", highlight=run_id)))
+
+
+# -- Recurring-scan schedule CRUD (§5.5 / §11.4, Slice 5) --------------------
+
+
+@bp.post("/accounts/<int:account_id>/schedule")
+def save_schedule(account_id: int) -> Response | str | tuple[str, int]:
+    """Create or update the account's recurring scan. One schedule per
+    account (see schedule_service's module docstring) — reuses the account's
+    OWN saved thresholds rather than collecting a second set in the modal."""
+    cron = request.form.get("cron", "")
+    enabled = request.form.get("enabled") == "on"
+    schedule_id: int | None = None
+    with session_scope() as session:
+        account = session.get(Account, account_id)
+        if account is None:
+            abort(404)
+        actor = _current_user(session)
+        thresholds = Thresholds.from_dict(account.source_config or {})
+        try:
+            schedule = upsert_schedule(
+                session, account_id=account_id, cron=cron, thresholds=thresholds,
+                enabled=enabled, actor_id=actor.id,
+            )
+        except ScheduleError as exc:
+            rows = list_accounts(session)
+            current = _current_account(session)
+            current_id = current.id if current is not None else None
+            # upsert_schedule validates before touching any row (see its
+            # docstring), so `rows` here still reflects whatever schedule
+            # existed BEFORE this failed attempt — exactly what the reopened
+            # modal needs to decide whether to show Delete/Run now.
+            existing = next((r.schedule for r in rows if r.account.id == account_id), None)
+            _expunge_account_rows(session, rows)
+            return render_template(
+                "accounts.html",
+                rows=rows,
+                current_account_id=current_id,
+                default_thresholds=Thresholds().to_dict(),
+                error=str(exc),
+                schedule_open_for=account_id,
+                schedule_form_values={"cron": cron, "enabled": enabled, "exists": existing is not None},
+            ), 400
+        schedule_id = schedule.id
+    sync_schedule(schedule_id, cron=cron, enabled=enabled)
+    return cast(Response, redirect(url_for("web.accounts")))
+
+
+@bp.post("/accounts/<int:account_id>/schedule/delete")
+def delete_schedule_route(account_id: int) -> Response:
+    with session_scope() as session:
+        schedule_id = delete_schedule(session, account_id)
+    if schedule_id is not None:
+        remove_schedule_job(schedule_id)
+    return cast(Response, redirect(url_for("web.accounts")))
+
+
+@bp.post("/accounts/<int:account_id>/schedule/run-now")
+def run_schedule_now(account_id: int) -> Response:
+    """The schedule editor's "Run now" override (§5.5) — fires the SAME
+    function the cron trigger calls, synchronously, rather than a separate
+    code path. Doesn't wait for APScheduler at all, so it's also how the
+    Playwright check exercises a "fire" without touching wall-clock time."""
+    with session_scope() as session:
+        schedule = get_schedule(session, account_id)
+        if schedule is None:
+            abort(404)
+        schedule_id = schedule.id
+    run_id = fire_schedule(schedule_id)
+    if run_id is None:
+        abort(404)  # schedule was deleted/disabled in the instant between the two queries above
     return cast(Response, redirect(url_for("web.runs", highlight=run_id)))
 
 
