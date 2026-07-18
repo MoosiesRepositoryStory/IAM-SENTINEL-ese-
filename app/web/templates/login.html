@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · IAM Sentinel</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <style>
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: var(--bg); }
+    .login-card {
+      width: 360px; max-width: calc(100vw - 32px); background: var(--bg-elev);
+      border: 1px solid var(--border); border-radius: var(--radius); padding: 28px;
+    }
+    .login-brand { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 650; margin-bottom: 22px; color: var(--text); }
+    .login-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
+    .login-field label { font-size: 12px; color: var(--text-muted); }
+    .login-field input {
+      background: var(--bg-elev-2); border: 1px solid var(--border-strong); border-radius: 8px;
+      padding: 9px 11px; color: var(--text); font: inherit; font-size: 13.5px;
+    }
+    .login-field input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .login-error {
+      background: color-mix(in srgb, var(--sev-critical) 12%, transparent);
+      border: 1px solid color-mix(in srgb, var(--sev-critical) 35%, transparent);
+      color: var(--sev-critical); border-radius: 8px; padding: 8px 11px; font-size: 12.5px; margin-bottom: 14px;
+    }
+    .login-submit { width: 100%; margin-top: 4px; }
+    .demo-box {
+      margin-top: 20px; padding: 12px 14px; border-radius: 8px; background: var(--bg-elev-2);
+      border: 1px solid var(--border); font-size: 11.5px; color: var(--text-muted); line-height: 1.7;
+    }
+    .demo-box b { color: var(--text); }
+    .demo-box .demo-pw { font-family: var(--mono); color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <div class="login-brand"><span>🛡️</span> IAM Sentinel</div>
+
+    {% if error %}<div class="login-error">{{ error }}</div>{% endif %}
+
+    <form method="post" action="{{ url_for('web.login', next=request.args.get('next')) }}" novalidate>
+      {{ form.hidden_tag() }}
+      <div class="login-field">
+        {{ form.email.label }}
+        {{ form.email(placeholder="you@example.com", autocomplete="username", autofocus=true) }}
+      </div>
+      <div class="login-field">
+        {{ form.password.label }}
+        {{ form.password(placeholder="••••••••", autocomplete="current-password") }}
+      </div>
+      <button type="submit" class="btn primary login-submit">Sign in</button>
+    </form>
+
+    <div class="demo-box">
+      <b>Demo credentials</b> (password: <span class="demo-pw">{{ demo_password }}</span>)<br>
+      {% for email, name, role in demo_users %}
+        {{ email }} — {{ role | replace('_', ' ') | capitalize }}<br>
+      {% endfor %}
+    </div>
+  </div>
+</body>
+</html>

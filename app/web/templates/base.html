@@ -60,6 +60,14 @@
       <button class="icon-btn" @click="toggle()" :title="mode === 'dark' ? 'Switch to light' : 'Switch to dark'" aria-label="Toggle theme">
         <span x-text="mode === 'dark' ? '☀' : '☾'"></span>
       </button>
+      {% if current_user.is_authenticated %}
+      <div class="user-chip" title="{{ current_user.email }} · {{ current_user.role | replace('_', ' ') | capitalize }}">
+        <span class="user-chip-name">{{ current_user.display_name }}</span>
+        <form method="post" action="{{ url_for('web.logout') }}" hx-post="{{ url_for('web.logout') }}">
+          <button type="submit" class="icon-btn" title="Sign out" aria-label="Sign out">⏻</button>
+        </form>
+      </div>
+      {% endif %}
     </div>
   </header>
 

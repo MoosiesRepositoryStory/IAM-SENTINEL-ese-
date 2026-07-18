@@ -33,6 +33,25 @@ def db_session(tmp_path, monkeypatch) -> Iterator[Session]:
         db_module.reset_engine()
 
 
+@pytest.fixture
+def client(db_session):  # noqa: ANN001
+    """A Flask test client wired to the same throwaway DB as ``db_session``
+    (route handlers open their own ``session_scope()``, a separate connection
+    to the same WAL-mode SQLite file — see app/db.py). ``start_background_jobs
+    =False`` skips APScheduler: it's a process-wide singleton that would
+    otherwise keep pointing at a prior test's already-torn-down engine across
+    repeated ``create_app()`` calls (§ app/web/__init__.py). CSRF is disabled
+    here for convenience — most tests don't care about it; the one test that
+    does (verifying the login form's protection is real) builds its own app
+    with CSRF left on rather than using this fixture."""
+    from app.web import create_app
+
+    app = create_app(start_background_jobs=False)
+    app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
+    with app.test_client() as c:
+        yield c
+
+
 def principal(uid: str, **kwargs) -> PrincipalRecord:
     return PrincipalRecord(principal_uid=uid, **kwargs)
 

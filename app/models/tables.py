@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from flask_login import UserMixin
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -23,7 +24,14 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin, now_iso
 
 
-class AppUser(Base, TimestampMixin):
+class AppUser(Base, TimestampMixin, UserMixin):
+    """The ``is_active`` column doubles as Flask-Login's activity check —
+    ``UserMixin.is_active`` is a property, but this class's own mapped column
+    of the same name takes precedence (it's found directly on this class, not
+    inherited), so a deactivated user is correctly refused a session without
+    any extra wiring. ``get_id()`` similarly falls through to UserMixin's
+    default (``str(self.id)``)."""
+
     __tablename__ = "app_user"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

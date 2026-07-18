@@ -11,12 +11,12 @@ from dataclasses import dataclass
 from typing import cast
 
 from flask import Blueprint, Response, abort, redirect, render_template, request, url_for
+from flask_login import current_user
 from sqlalchemy import select
 
 from app.db import session_scope
 from app.domain.records import Thresholds
-from app.models import Account, AppUser, Run, RunSummary
-from app.models.base import now_iso
+from app.models import Account, Run, RunSummary
 from app.scheduler import fire_schedule, remove_schedule_job, sync_schedule
 from app.services.account_service import list_accounts
 from app.services.bulk_service import bulk_assign, bulk_exception, bulk_transition
@@ -59,20 +59,33 @@ from app.services.workflow_service import (
     transition,
 )
 
-# Seeded demo roster (until auth in Phase 4): the current actor is the admin;
-# the analysts make the assignee picker meaningful. (email, name, role).
-_DEMO_ROSTER = [
-    ("demo@iam-sentinel.local", "Demo Analyst", "admin"),
-    ("priya@iam-sentinel.local", "Priya Nair", "analyst"),
-    ("sam@iam-sentinel.local", "Sam Okafor", "analyst"),
-]
-
 bp = Blueprint("web", __name__)
 # Single source of truth for the row-level context menu's "Change status" /
 # "Suppress" / "Accept risk" items (§8.3) — the exact function the drawer
 # footer already uses. Registered so findings_table.html can call it per row
 # without a Python-side per-row loop.
 bp.add_app_template_global(available_actions)
+
+# Routes reachable without a session — everything else on this blueprint
+# requires login (§10.1). Static files aren't affected either way: they're
+# served by Flask's app-level `static` endpoint, never part of this blueprint,
+# so a blueprint-scoped before_request never even runs for them.
+_PUBLIC_ENDPOINTS = {"web.login", "web.healthz"}
+
+
+@bp.before_request
+def _require_login() -> Response | None:
+    if request.endpoint in _PUBLIC_ENDPOINTS:
+        return None
+    if current_user.is_authenticated:
+        return None
+    if request.headers.get("HX-Request") == "true":
+        # A redirect() response body can't usefully swap into an htmx target;
+        # HX-Redirect tells htmx to do a full top-level navigation instead.
+        resp = Response(status=200)
+        resp.headers["HX-Redirect"] = url_for("web.login")
+        return resp
+    return cast(Response, redirect(url_for("web.login", next=request.path)))
 
 # Column definitions drive both the header row and the "Columns" menu (§8.2).
 # ``key`` matches finding_query._SORTABLE where sortable; ``default`` = shown.
@@ -106,30 +119,6 @@ def _current_account(session) -> Account | None:  # noqa: ANN001
         run = session.get(Run, run_id)
         return session.get(Account, run.account_id)
     return session.scalar(select(Account).order_by(Account.id.desc()))
-
-
-def _current_user(session) -> AppUser:  # noqa: ANN001
-    """Until auth lands in Phase 4, actions are attributed to the seeded admin
-    ("Demo Analyst") so the audit trail shows a real name and every transition
-    (incl. accept-risk) is permitted. Also seeds the analyst roster so the
-    assignee picker is populated."""
-    admin: AppUser | None = None
-    for email, name, role in _DEMO_ROSTER:
-        user = session.scalar(select(AppUser).where(AppUser.email == email))
-        if user is None:
-            user = AppUser(
-                email=email,
-                display_name=name,
-                password_hash="!",  # unusable; real auth arrives in Phase 4
-                role=role,
-                last_login_at=now_iso() if role == "admin" else None,
-            )
-            session.add(user)
-            session.flush()
-        if role == "admin":
-            admin = user
-    assert admin is not None
-    return admin
 
 
 def _selected_columns() -> list[str]:
@@ -251,7 +240,7 @@ def connect_account_route() -> Response | str | tuple[str, int]:
     actor_id: int | None = None
     new_schedule_id: int | None = None
     with session_scope() as session:
-        actor = _current_user(session)
+        actor = current_user
         actor_id = actor.id
         try:
             account_id = connect_account(
@@ -330,7 +319,7 @@ def rescan_account(account_id: int) -> Response:
         account = session.get(Account, account_id)
         if account is None:
             abort(404)
-        actor = _current_user(session)
+        actor = current_user
         actor_id = actor.id
         thresholds = Thresholds.from_dict(account.source_config or {})
     run_id = enqueue_scan(account_id, thresholds=thresholds, trigger="manual", triggered_by=actor_id)
@@ -352,7 +341,7 @@ def save_schedule(account_id: int) -> Response | str | tuple[str, int]:
         account = session.get(Account, account_id)
         if account is None:
             abort(404)
-        actor = _current_user(session)
+        actor = current_user
         thresholds = Thresholds.from_dict(account.source_config or {})
         try:
             schedule = upsert_schedule(
@@ -611,7 +600,6 @@ def finding_drawer(group_id: int) -> Response | str:
     if not _is_htmx():
         return _render_findings(full_page=True, open_group=group_id)
     with session_scope() as session:
-        _current_user(session)  # seed the roster so the assignee picker is populated
         expire_exceptions(session)  # re-surface anything whose expiry has passed
         return _render_drawer(session, group_id, focus_tab=tab, open_action=action)
 
@@ -628,7 +616,7 @@ def finding_transition(group_id: int) -> Response | str | tuple[str, int]:
         detail = get_finding_detail(session, group_id)
         if detail is None:
             abort(404)
-        actor = _current_user(session)
+        actor = current_user
         try:
             if to_status == "open" and detail.group.current_status in EXCEPTION_STATUSES:
                 revoke_exception(session, detail.group, actor_id=actor.id, note=note or "Exception revoked")
@@ -646,7 +634,7 @@ def _apply_exception(group_id: int, kind: str) -> Response | str | tuple[str, in
         detail = get_finding_detail(session, group_id)
         if detail is None:
             abort(404)
-        actor = _current_user(session)
+        actor = current_user
         try:
             create_exception(
                 session, detail.group, kind=kind, reason=reason, actor_id=actor.id,
@@ -681,7 +669,7 @@ def finding_comment(group_id: int) -> Response | str | tuple[str, int]:
         detail = get_finding_detail(session, group_id)
         if detail is None:
             abort(404)
-        author = _current_user(session)
+        author = current_user
         try:
             add_comment(session, detail.group, author_id=author.id, body=body)
         except CommentError as exc:
@@ -699,7 +687,7 @@ def finding_assign(group_id: int) -> Response | str:
         detail = get_finding_detail(session, group_id)
         if detail is None:
             abort(404)
-        actor = _current_user(session)
+        actor = current_user
         if raw == "me":
             assignee_id: int | None = actor.id
         elif raw in {"", "none"}:
@@ -743,7 +731,7 @@ def bulk_finding_transition() -> Response | str:
     # mutation's session must be committed (the `with` block exited) first — a
     # nested, still-open session wouldn't see these uncommitted writes.
     with session_scope() as session:
-        actor = _current_user(session)
+        actor = current_user
         result = bulk_transition(session, group_ids, to_status, actor_id=actor.id)
     return _bulk_response(result)
 
@@ -753,7 +741,7 @@ def bulk_finding_assign() -> Response | str:
     group_ids = _parse_group_ids()
     raw = (request.form.get("assignee_id") or "").strip()
     with session_scope() as session:
-        actor = _current_user(session)
+        actor = current_user
         assignee_id: int | None = actor.id if raw == "me" else (int(raw) if raw.isdigit() else None)
         result = bulk_assign(session, group_ids, assignee_id, actor_id=actor.id)
     return _bulk_response(result)
@@ -774,7 +762,7 @@ def _bulk_apply_exception(kind: str) -> Response | str:
     reason = request.form.get("reason") or ""
     expires_at = request.form.get("expires_at") or None
     with session_scope() as session:
-        actor = _current_user(session)
+        actor = current_user
         result = bulk_exception(
             session, group_ids, kind, reason=reason, actor_id=actor.id, expires_at=expires_at
         )
@@ -843,7 +831,6 @@ def _render_findings(*, full_page: bool, open_group: int | None = None) -> Respo
         if account is None:
             return render_template("empty_state.html", reason="no_data", columns=COLUMNS)
 
-        _current_user(session)  # seed the roster so "Assign to…" isn't empty on first load
         expire_exceptions(session)  # re-surface anything whose expiry has passed
         result = query_findings(session, account.id, sort=sort, filters=filters, page=page)
         group_ids = [row.group_id for row in result.rows]
