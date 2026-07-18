@@ -15,7 +15,7 @@ from sqlalchemy import select
 
 from app.db import session_scope
 from app.domain.records import Thresholds
-from app.models import Account, AppUser, Run
+from app.models import Account, AppUser, Run, RunSummary
 from app.models.base import now_iso
 from app.scheduler import fire_schedule, remove_schedule_job, sync_schedule
 from app.services.account_service import list_accounts
@@ -24,6 +24,7 @@ from app.services.checks_catalog import list_checks
 from app.services.collaboration import CommentError, active_users, add_comment, assign
 from app.services.compliance_view import compliance_summary
 from app.services.connect_service import ConnectError, connect_account
+from app.services.dashboard import build_dashboard
 from app.services.diff_service import DiffError, default_diff_pair, diff
 from app.services.exception_service import (
     EXCEPTION_STATUSES,
@@ -149,14 +150,34 @@ def _page_arg() -> int:
 
 
 @bp.get("/")
+@bp.get("/dashboard")
 def index() -> Response | str:
-    """Dashboard placeholder for Slice 1 — redirects into the findings table."""
+    """Account posture dashboard (§8.11 / §6.4) — the retuned posture gauge,
+    grade, score trend, severity mix, and riskiest principals for the latest
+    completed run. Falls back to the empty state before the first scan."""
     with session_scope() as session:
         account = _current_account(session)
-        run_count = session.scalar(select(Run.id).limit(1)) is not None
-    if account is None or not run_count:
-        return render_template("empty_state.html", reason="no_data", columns=COLUMNS)
-    return _render_findings(full_page=True)
+        run_id = _current_completed_run_id(session)
+        if account is None or run_id is None:
+            return render_template("empty_state.html", reason="no_data", columns=COLUMNS)
+        data = build_dashboard(session, run_id)
+        trend = score_trend(session, account.id)
+        frameworks = compliance_summary(session, run_id)
+        summary = session.get(RunSummary, run_id)
+        new_count = summary.new_count if summary else None
+        resolved_count = summary.resolved_count if summary else None
+        gauge = _gauge_geometry(data.posture)
+        session.expunge(data.run)
+    return render_template(
+        "dashboard.html",
+        d=data,
+        gauge=gauge,
+        trend=trend,
+        spark_points=_sparkline_points(trend, width=200, height=44),
+        frameworks=frameworks,
+        new_count=new_count,
+        resolved_count=resolved_count,
+    )
 
 
 @bp.get("/findings")
@@ -477,6 +498,19 @@ def checks_catalog() -> Response | str:
 
 
 # -- Run diff view (§5.4 / §8.9, Slice 4) ------------------------------------
+
+
+def _gauge_geometry(score: int) -> dict[str, float]:
+    """SVG ring-gauge geometry for a 0-100 posture score, computed server-side
+    (no JS/CDN — same offline posture as the sparkline). The arc is a fraction
+    ``score/100`` of a full ring; the template rotates it to start at 12 o'clock
+    and colors it by grade."""
+    import math
+
+    r = 54.0
+    circ = 2 * math.pi * r
+    filled = circ * max(0, min(100, score)) / 100
+    return {"r": r, "circ": round(circ, 2), "filled": round(filled, 2)}
 
 
 def _sparkline_points(trend: list, width: int = 160, height: int = 32) -> str:  # noqa: ANN001

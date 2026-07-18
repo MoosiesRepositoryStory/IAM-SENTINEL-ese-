@@ -854,4 +854,61 @@ tr.run-highlight:hover { background: var(--accent-soft); }
 .chk-id { font-size: 10.5px; margin-bottom: 4px; }
 .chk-desc { font-size: 12px; color: var(--text-muted); line-height: 1.5; max-width: 420px; white-space: normal; }
 .checks-catalog td { vertical-align: top; padding-top: 12px; padding-bottom: 12px; }
+
+/* ---- Dashboard (§8.11 / §6.4, Phase 3 Slice 5) ---- */
+.dash-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; align-items: start;
+}
+.card {
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px;
+}
+.card-label { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: 12px; }
+
+/* Posture gauge */
+.gauge-card { display: flex; flex-direction: column; align-items: center; }
+.gauge-wrap { position: relative; width: 200px; height: 200px; }
+.gauge { width: 200px; height: 200px; }
+.gauge-track { fill: none; stroke: var(--bg-elev-2); stroke-width: 11; }
+.gauge-arc { fill: none; stroke-width: 11; stroke-linecap: round; transition: stroke-dasharray .5s ease; }
+.gauge-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.gauge-score { font-size: 46px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.gauge-grade { font-size: 16px; font-weight: 700; margin-top: 4px; letter-spacing: 0.05em; }
+.gauge-scale { font-size: 11px; color: var(--text-faint); margin-top: 8px; }
+.grade-A { stroke: var(--sev-low); } .grade-text-A { color: var(--sev-low); }
+.grade-B { stroke: var(--sev-low); } .grade-text-B { color: var(--sev-low); }
+.grade-C { stroke: var(--sev-medium); } .grade-text-C { color: var(--sev-medium); }
+.grade-D { stroke: var(--sev-high); } .grade-text-D { color: var(--sev-high); }
+.grade-F { stroke: var(--sev-critical); } .grade-text-F { color: var(--sev-critical); }
+
+/* Severity tiles */
+.sev-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.sev-tile { text-align: center; padding: 10px 4px; border-radius: 8px; background: var(--bg-elev-2); border: 1px solid var(--border); text-decoration: none; }
+.sev-tile:hover { border-color: var(--border-strong); }
+.sev-tile-n { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sev-tile-n.sev-CRITICAL { color: var(--sev-critical); background: none; }
+.sev-tile-n.sev-HIGH { color: var(--sev-high); background: none; }
+.sev-tile-n.sev-MEDIUM { color: var(--sev-medium); background: none; }
+.sev-tile-n.sev-LOW { color: var(--sev-low); background: none; }
+.sev-tile-l { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.dash-substrip { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; font-size: 12px; color: var(--text-muted); }
+
+.dash-spark { width: 100%; height: 44px; }
+.spark-line { stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.spark-caption { font-size: 11px; color: var(--text-faint); margin-top: 4px; }
+
+/* Riskiest principals */
+.risk-princ-list { display: flex; flex-direction: column; gap: 12px; }
+.risk-princ { text-decoration: none; display: block; }
+.rp-head { display: flex; justify-content: space-between; align-items: baseline; }
+.rp-name { color: var(--text); font-size: 12.5px; }
+.rp-score { font-weight: 700; font-size: 13px; color: var(--text); font-variant-numeric: tabular-nums; }
+.rp-bar { height: 6px; border-radius: 999px; background: var(--bg-elev-2); overflow: hidden; margin: 5px 0 3px; }
+.rp-bar-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--sev-high), var(--sev-critical)); }
+.rp-meta { font-size: 11px; color: var(--text-faint); }
+
+/* Compliance mini */
+.comp-mini-list { display: flex; flex-direction: column; gap: 14px; }
+.comp-mini { text-decoration: none; display: block; }
+.cm-head { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--text); margin-bottom: 5px; }
+.cm-meta { font-size: 11px; color: var(--text-faint); margin-top: 3px; }
 #schedule-run-info { color: var(--text-faint); line-height: 1.6; }

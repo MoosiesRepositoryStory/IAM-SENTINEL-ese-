@@ -90,7 +90,20 @@ def run_analysis(dataset: NormalizedDataset, thresholds: Thresholds) -> Analysis
     counts_by_severity = Counter(f.severity.value for f in findings)
     counts_by_category = Counter(f.category.value for f in findings)
     compliance_summary = _summarize_compliance(findings)
-    composite = risk.account_posture_score([f.risk_score for f in findings])
+    # At scan time every finding is newly open, so the stored composite score is
+    # the posture over all of them; the dashboard recomputes the *live* posture
+    # over just the currently-active findings (excluding suppressed/resolved)
+    # from the same PostureFactor shape (§6.4).
+    composite = risk.account_posture_score(
+        [
+            risk.PostureFactor(
+                severity=f.severity.value,
+                blast_radius=(p.blast_radius_score if (p := principals.get(f.principal_uid or "")) else 0),
+                is_escalation=bool(f.evidence.get("graph_path")),
+            )
+            for f in findings
+        ]
+    )
 
     return AnalysisResult(
         findings=findings,

@@ -138,6 +138,19 @@ def test_planted_anomalies_surface() -> None:
         assert expected in check_ids, f"missing planted finding: {expected}"
 
 
+def test_posture_score_is_non_degenerate_on_the_bad_demo_org() -> None:
+    """Phase 3 Slice 5 retune: the deliberately-misconfigured moto org must
+    read as a believable low-but-readable F, NOT the old uninformative 0.
+    Pinned to a band (not an exact number) so the seed can gain/lose a finding
+    without a brittle failure, while still guarding the 'not pegged at floor'
+    property the retune exists to fix."""
+    from app.analysis.risk import posture_grade
+
+    result = run_analysis(_fetch(), Thresholds())
+    assert 5 <= result.composite_score <= 25, result.composite_score
+    assert posture_grade(result.composite_score) == "F"
+
+
 def test_least_privilege_recommendations_over_real_log_data() -> None:
     """Both the confident and insufficient-data paths surface off the real
     moto CloudTrail: intern used none of its granted actions (plenty of events

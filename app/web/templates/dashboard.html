@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% set active_nav = 'dashboard' %}
+{% block title %}Dashboard · IAM Sentinel{% endblock %}
+{% block crumb %}<b>Dashboard</b>{% endblock %}
+
+{% block main %}
+<div class="page-head">
+  <h1>Account posture</h1>
+  <a class="btn primary" style="margin-left:auto" href="{{ url_for('web.runs') }}">↻ Runs</a>
+</div>
+<p class="page-sub">Latest completed scan (run #{{ d.run.id }}). Posture reflects the currently-active findings — suppressing or resolving one lifts the score (§6.4).</p>
+
+<div class="dash-grid">
+  <!-- Posture gauge -->
+  <div class="card gauge-card">
+    <div class="card-label">Posture score</div>
+    <div class="gauge-wrap">
+      <svg class="gauge" viewBox="0 0 130 130" role="img" aria-label="Posture score {{ d.posture }} of 100, grade {{ d.grade }}">
+        <circle class="gauge-track" cx="65" cy="65" r="{{ gauge.r }}"></circle>
+        <circle class="gauge-arc grade-{{ d.grade }}" cx="65" cy="65" r="{{ gauge.r }}"
+                stroke-dasharray="{{ gauge.filled }} {{ gauge.circ }}"
+                transform="rotate(-90 65 65)"></circle>
+      </svg>
+      <div class="gauge-center">
+        <div class="gauge-score grade-text-{{ d.grade }}">{{ d.posture }}</div>
+        <div class="gauge-grade grade-text-{{ d.grade }}">{{ d.grade }}</div>
+      </div>
+    </div>
+    <div class="gauge-scale">0 = worst · 100 = clean</div>
+  </div>
+
+  <!-- Severity mix + since-last-scan -->
+  <div class="card">
+    <div class="card-label">Active findings by severity</div>
+    <div class="sev-tiles">
+      {% for sev, cls in [('CRITICAL','sev-CRITICAL'), ('HIGH','sev-HIGH'), ('MEDIUM','sev-MEDIUM'), ('LOW','sev-LOW')] %}
+      <a class="sev-tile" href="{{ url_for('web.findings', severity=sev) }}">
+        <div class="sev-tile-n {{ cls }}">{{ d.severity_counts.get(sev, 0) }}</div>
+        <div class="sev-tile-l">{{ sev | capitalize }}</div>
+      </a>
+      {% endfor %}
+    </div>
+    <div class="dash-substrip">
+      <span><b>{{ d.total_active }}</b> active total</span>
+      {% if new_count is not none %}<span class="delta up">+{{ new_count }} new</span>{% endif %}
+      {% if resolved_count is not none %}<span class="delta down">−{{ resolved_count }} resolved</span>{% endif %}
+      <span>since last scan</span>
+    </div>
+
+    <div class="card-label" style="margin-top:16px">Score trend</div>
+    {% if trend | length > 1 %}
+    <svg class="dash-spark" viewBox="0 0 200 44" preserveAspectRatio="none" aria-label="Score trend across runs">
+      <polyline points="{{ spark_points }}" fill="none" class="spark-line"></polyline>
+    </svg>
+    <div class="spark-caption">{{ trend | length }} runs · latest {{ trend[-1].score }}</div>
+    {% else %}
+    <p class="muted">Only one scan so far — the trend appears after the next run.</p>
+    {% endif %}
+  </div>
+
+  <!-- Riskiest principals -->
+  <div class="card">
+    <div class="card-label">Riskiest principals</div>
+    {% if d.riskiest %}
+    {% set top = d.riskiest[0].total_risk %}
+    <div class="risk-princ-list">
+      {% for p in d.riskiest %}
+      <a class="risk-princ" href="{{ url_for('web.principal_detail', principal_uid=p.principal_uid) }}">
+        <div class="rp-head">
+          <span class="rp-name mono">{{ p.username }}</span>
+          <span class="rp-score">{{ p.total_risk }}</span>
+        </div>
+        <div class="rp-bar"><div class="rp-bar-fill" style="width: {{ (100 * p.total_risk / top) | round(0, 'floor') }}%"></div></div>
+        <div class="rp-meta">{{ p.finding_count }} finding{{ 's' if p.finding_count != 1 }} · blast {{ p.blast_radius }}</div>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No active findings on any principal.</p>
+    {% endif %}
+  </div>
+
+  <!-- Compliance mini -->
+  <div class="card">
+    <div class="card-label">Compliance</div>
+    <div class="comp-mini-list">
+      {% for fw in frameworks %}
+      <a class="comp-mini" href="{{ url_for('web.compliance') }}">
+        <div class="cm-head">
+          <span>{{ fw.label }}</span>
+          <span class="cf-pct cf-{{ 'good' if fw.percent >= 90 else ('mid' if fw.percent >= 70 else 'bad') }}">{{ fw.percent }}%</span>
+        </div>
+        <div class="cf-bar"><div class="cf-bar-fill cf-{{ 'good' if fw.percent >= 90 else ('mid' if fw.percent >= 70 else 'bad') }}" style="width: {{ fw.percent }}%"></div></div>
+        <div class="cm-meta">{{ fw.passing_controls }} / {{ fw.total_controls }} controls passing</div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}
