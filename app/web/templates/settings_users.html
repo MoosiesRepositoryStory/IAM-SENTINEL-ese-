@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% set active_nav = 'settings' %}
+{% block title %}Users · Settings · IAM Sentinel{% endblock %}
+{% block crumb %}<a href="{{ url_for('web.settings_index') }}">Settings</a> <span class="dot-sep">/</span> <b>Users</b>{% endblock %}
+
+{% block main %}
+<div x-data="{ show: {{ 'true' if form_open else 'false' }} }">
+<div class="page-head">
+  <h1>Users</h1>
+  <button type="button" class="btn primary" style="margin-left:auto" @click="show = true">+ Add user</button>
+</div>
+<p class="page-sub">Global roles — read only &lt; analyst &lt; admin. At least one active admin is always required.</p>
+
+{% if error %}<div class="wizard-error" style="margin-bottom:14px">{{ error }}</div>{% endif %}
+
+<div class="table-wrap">
+  <div class="tbl-scroll">
+  <table class="findings">
+    <thead>
+      <tr><th>User</th><th>Role</th><th>Status</th><th>Last login</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      {% set locked = u.id == lockout_id %}
+      <tr>
+        <td>
+          <div class="title-cell">{{ u.display_name }}{{ ' (you)' if u.id == current_user.id }}</div>
+          <div class="mono" style="font-size:11.5px">{{ u.email }}</div>
+        </td>
+        <td>
+          <form method="post" action="{{ url_for('web.users_update_role', user_id=u.id) }}">
+            <select name="role" class="assign-picker" onchange="this.form.submit()"
+                    {{ 'disabled' if locked }}
+                    title="{{ 'Cannot change the last active admin' if locked else '' }}">
+              {% for r in roles %}
+              <option value="{{ r }}" {{ 'selected' if r == u.role }}>{{ r | replace('_', ' ') | capitalize }}</option>
+              {% endfor %}
+            </select>
+          </form>
+        </td>
+        <td><span class="chip {{ 'on' if u.is_active }}">{{ 'Active' if u.is_active else 'Deactivated' }}</span></td>
+        <td class="mono">{{ (u.last_login_at or '')[:10] or 'never' }}</td>
+        <td>
+          <form method="post" action="{{ url_for('web.users_toggle_active', user_id=u.id) }}">
+            <input type="hidden" name="is_active" value="{{ '0' if u.is_active else '1' }}">
+            <button type="submit" class="btn ghost tiny" {{ 'disabled' if locked and u.is_active }}
+                    title="{{ 'Cannot deactivate the last active admin' if locked and u.is_active else '' }}">
+              {{ 'Deactivate' if u.is_active else 'Activate' }}
+            </button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<!-- Add user modal — same wizard-overlay chrome as accounts.html's Connect
+     Account, but a single step (no multi-step wizard needed for this form). -->
+<div class="wizard-overlay" x-show="show" x-cloak style="display:none"
+     @keydown.escape.window="show = false"
+     @click="if ($event.target === $el) show = false">
+  <form class="wizard-panel" role="dialog" aria-label="Add user" method="post"
+        action="{{ url_for('web.users_create') }}" @click.stop>
+    <div class="wizard-head">
+      <b>Add user</b>
+      <button type="button" class="icon-btn drawer-close" aria-label="Close" @click="show = false">✕</button>
+    </div>
+    <div class="wizard-body">
+      <label class="wfield"><span>Email</span>
+        <input type="email" name="email" class="text-input" required autocomplete="off">
+      </label>
+      <label class="wfield"><span>Display name</span>
+        <input type="text" name="display_name" class="text-input" required>
+      </label>
+      <label class="wfield"><span>Role</span>
+        <select name="role" class="text-input">
+          {% for r in roles %}<option value="{{ r }}" {{ 'selected' if r == 'read_only' }}>{{ r | replace('_', ' ') | capitalize }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="wfield"><span>Initial password</span>
+        <input type="password" name="password" class="text-input" minlength="8" required autocomplete="new-password">
+      </label>
+    </div>
+    <div class="wizard-foot">
+      <button type="button" class="btn ghost" @click="show = false">Cancel</button>
+      <button type="submit" class="btn primary" style="margin-left:auto">Create user</button>
+    </div>
+  </form>
+</div>
+</div>
+{% endblock %}

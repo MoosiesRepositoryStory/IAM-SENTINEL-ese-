@@ -16,9 +16,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from app.models import AuditEvent, FindingException, FindingGroup
+from app.models import AppUser, AuditEvent, FindingException, FindingGroup
 from app.services import create_account, run_scan
 from app.services.auth_service import DEMO_PASSWORD
+from app.services.user_service import create_user
 from sqlalchemy import select
 
 pytestmark = pytest.mark.integration
@@ -81,6 +82,10 @@ def _matrix() -> list[tuple[str, str, str, dict]]:
         ("POST", "/findings/bulk/assign", "analyst", {"group_ids": "", "assignee_id": "me"}),
         ("POST", "/findings/bulk/suppress", "analyst", {"group_ids": "", "reason": "x"}),
         ("POST", "/findings/bulk/accept-risk", "admin", {"group_ids": "", "reason": "x"}),
+        ("GET", "/settings/users", "admin", {}),
+        ("POST", "/settings/users", "admin", {"email": "", "display_name": "", "role": "read_only", "password": ""}),
+        ("POST", f"/settings/users/{_BOGUS}/role", "admin", {"role": "analyst"}),
+        ("POST", f"/settings/users/{_BOGUS}/active", "admin", {"is_active": "0"}),
     ]
 
 
@@ -88,6 +93,7 @@ _MATRIX_IDS = [
     "connect", "scan", "schedule-save", "schedule-delete", "schedule-run-now",
     "transition", "suppress", "accept-risk", "comment", "assign",
     "bulk-transition", "bulk-assign", "bulk-suppress", "bulk-accept-risk",
+    "settings-users-list", "settings-users-create", "settings-users-role", "settings-users-active",
 ]
 
 
@@ -100,7 +106,10 @@ def test_route_x_role_matrix(client, db_session, role, idx) -> None:
     method, path, minimum, data = _matrix()[idx]
     _login(client, role)
 
-    resp = client.post(path, data=data, follow_redirects=False)
+    if method == "GET":
+        resp = client.get(path, follow_redirects=False)
+    else:
+        resp = client.post(path, data=data, follow_redirects=False)
 
     allowed = _ROLES.index(role) >= _ROLES.index(minimum)
     if allowed:
@@ -129,11 +138,18 @@ def test_403_writes_an_access_denied_audit_event(client, db_session) -> None:
 
 def test_viewer_get_routes_remain_readable(client, db_session) -> None:
     """VIEW is read_only-level (§10.2) — a viewer must still be able to GET
-    every page; only mutations are gated."""
+    every page; only mutations (and the admin-only /settings/users) are
+    gated."""
     _login(client, "read_only")
-    for path in ("/", "/findings", "/accounts", "/runs"):
+    for path in ("/", "/findings", "/accounts", "/runs", "/settings", "/profile"):
         resp = client.get(path)
         assert resp.status_code == 200, f"read_only was blocked from GET {path}"
+
+
+def test_viewer_403_on_settings_users_but_profile_still_works(client, db_session) -> None:
+    _login(client, "read_only")
+    assert client.get("/settings/users").status_code == 403
+    assert client.get("/profile").status_code == 200
 
 
 # ---- named edge cases from the approved design -----------------------------
@@ -196,3 +212,66 @@ def test_read_only_never_sees_a_mutating_control_in_the_drawer(client, db_sessio
     assert "No status actions available." in body
     assert 'name="body"' not in body  # comment box
     assert "Assign to me" not in body
+
+
+# ---- last-active-admin lockout (§10.3, Phase 4 Slice 3), route level ------
+
+
+def _admin_id(db_session) -> int:  # noqa: ANN001
+    admin_id = db_session.scalar(select(AppUser.id).where(AppUser.email == "admin@example.com"))
+    assert admin_id is not None
+    return admin_id
+
+
+def test_route_blocks_deactivating_the_last_admin(client, db_session) -> None:
+    admin_id = _admin_id(db_session)
+    _login(client, "admin")
+
+    resp = client.post(f"/settings/users/{admin_id}/active", data={"is_active": "0"})
+    assert resp.status_code == 400
+    assert b"last active admin" in resp.data
+
+    user = db_session.get(AppUser, admin_id)
+    db_session.refresh(user)
+    assert user.is_active is True  # unchanged
+
+
+def test_route_blocks_demoting_the_last_admin(client, db_session) -> None:
+    admin_id = _admin_id(db_session)
+    _login(client, "admin")
+
+    resp = client.post(f"/settings/users/{admin_id}/role", data={"role": "analyst"})
+    assert resp.status_code == 400
+    assert b"last active admin" in resp.data
+
+    user = db_session.get(AppUser, admin_id)
+    db_session.refresh(user)
+    assert user.role == "admin"  # unchanged
+
+
+def test_route_allows_deactivating_a_non_last_admin(client, db_session) -> None:
+    second_admin = create_user(
+        db_session, email="second-admin@x.local", display_name="Second Admin",
+        role="admin", password="a-long-password",
+    )
+    db_session.commit()  # route layer opens its own connection to the same file
+    _login(client, "admin")
+
+    resp = client.post(f"/settings/users/{second_admin.id}/active", data={"is_active": "0"})
+    assert resp.status_code != 400
+    db_session.refresh(second_admin)
+    assert second_admin.is_active is False
+
+
+def test_route_allows_demoting_a_non_last_admin(client, db_session) -> None:
+    second_admin = create_user(
+        db_session, email="second-admin@x.local", display_name="Second Admin",
+        role="admin", password="a-long-password",
+    )
+    db_session.commit()  # route layer opens its own connection to the same file
+    _login(client, "admin")
+
+    resp = client.post(f"/settings/users/{second_admin.id}/role", data={"role": "analyst"})
+    assert resp.status_code != 400
+    db_session.refresh(second_admin)
+    assert second_admin.role == "analyst"

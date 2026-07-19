@@ -496,7 +496,7 @@ window.Sentinel = (function () {
     { group: 'Navigate', label: 'Go to Runs', shortcut: 'g r', enabled: true, action: () => navigate('/runs') },
     { group: 'Navigate', label: 'Go to Accounts', shortcut: '', enabled: true, action: () => navigate('/accounts') },
     { group: 'Navigate', label: 'Go to Exceptions', shortcut: '', enabled: false },
-    { group: 'Navigate', label: 'Go to Settings', shortcut: '', enabled: false },
+    { group: 'Navigate', label: 'Go to Settings', shortcut: '', enabled: true, action: () => navigate('/settings') },
     { group: 'Actions', label: 'Toggle theme', shortcut: 't', enabled: true, action: () => toggleTheme() },
     { group: 'Actions', label: 'Run scan', shortcut: '', enabled: false },
     { group: 'Actions', label: 'Connect account', shortcut: '', enabled: false },

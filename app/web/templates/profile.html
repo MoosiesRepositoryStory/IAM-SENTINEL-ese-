@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% set active_nav = 'settings' %}
+{% block title %}Profile · IAM Sentinel{% endblock %}
+{% block crumb %}<a href="{{ url_for('web.settings_index') }}">Settings</a> <span class="dot-sep">/</span> <b>Profile</b>{% endblock %}
+
+{% block main %}
+<div class="page-head">
+  <h1>Profile</h1>
+</div>
+<p class="page-sub">Your account details and password. Available to any signed-in user — this only ever touches your own account.</p>
+
+<dl class="meta-grid" style="max-width:420px; margin-bottom:28px">
+  <dt>Name</dt><dd>{{ current_user.display_name }}</dd>
+  <dt>Email</dt><dd class="mono">{{ current_user.email }}</dd>
+  <dt>Role</dt><dd><span class="chip on">{{ current_user.role | replace('_', ' ') | capitalize }}</span></dd>
+  <dt>Member since</dt><dd>{{ (current_user.created_at or '')[:10] or '—' }}</dd>
+</dl>
+
+<h2 style="font-size:14.5px; font-weight:650; margin:0 0 12px">Change password</h2>
+{% if error %}<div class="wizard-error" style="max-width:360px">{{ error }}</div>{% endif %}
+{% if success %}<div class="form-success" style="max-width:360px">Password updated.</div>{% endif %}
+<form method="post" action="{{ url_for('web.profile_change_password') }}" style="max-width:360px">
+  <label class="wfield"><span>Current password</span>
+    <input type="password" name="current_password" class="text-input" autocomplete="current-password" required>
+  </label>
+  <label class="wfield"><span>New password</span>
+    <input type="password" name="new_password" class="text-input" autocomplete="new-password" minlength="8" required>
+  </label>
+  <label class="wfield"><span>Confirm new password</span>
+    <input type="password" name="confirm_password" class="text-input" autocomplete="new-password" minlength="8" required>
+  </label>
+  <button type="submit" class="btn primary">Update password</button>
+</form>
+{% endblock %}

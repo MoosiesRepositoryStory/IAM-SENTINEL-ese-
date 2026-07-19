@@ -26,8 +26,22 @@ def _load_user(user_id: str) -> AppUser | None:
     # established pattern — see views.py's expunge discipline): AppUser has no
     # relationships, so its already-loaded scalar columns (id/email/role/...)
     # stay safely readable as `current_user` for the rest of the request.
+    #
+    # Returning None for a deactivated user (§10.3, Phase 4 Slice 3) is
+    # deliberate: Flask-Login's own UserMixin.is_active is just a property an
+    # app can check wherever it likes — it does NOT, by itself, block an
+    # already-established session. AppUser.is_active shadows it (a real mapped
+    # column, found directly on the class), but without this check a user
+    # deactivated mid-session would keep passing `current_user.is_authenticated`
+    # in the blueprint's before_request gate and stay logged in regardless.
+    # Returning None here makes user_loader itself the enforcement point: the
+    # very next request re-derives "authenticated" as false, which is what
+    # makes "Deactivate" in /settings/users actually take effect immediately
+    # rather than merely blocking future logins (authenticate() already did
+    # that half, since Phase 4 Slice 1).
     with session_scope() as session:
-        return session.get(AppUser, int(user_id))
+        user = session.get(AppUser, int(user_id))
+        return user if user is not None and user.is_active else None
 
 
 def create_app(*, start_background_jobs: bool = True) -> Flask:
@@ -48,7 +62,10 @@ def create_app(*, start_background_jobs: bool = True) -> Flask:
     init_engine(settings)
     login_manager.init_app(app)
 
-    from app.web import auth_views  # noqa: F401 — registers /login, /logout on `bp`
+    from app.web import (
+        auth_views,  # noqa: F401 — registers /login, /logout on `bp`
+        settings_views,  # noqa: F401 — registers /settings, /profile on `bp`
+    )
     from app.web.views import bp
 
     app.register_blueprint(bp)

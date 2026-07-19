@@ -72,8 +72,12 @@ class Capability:
     SUPPRESS = "analyst"
     ACCEPT_RISK_CREATE = "admin"
     CREATE_TICKET = "analyst"  # not yet wired to a route (Slice 5)
-    MANAGE_USERS = "admin"  # not yet a route (Slice 3)
-    MANAGE_SETTINGS = "admin"  # not yet a route (Slice 3)
+    MANAGE_USERS = "admin"  # gates GET+POST /settings/users/* (Slice 3)
+    # Reserved: the /settings shell itself is VIEW-level (any authenticated
+    # user — it's a nav hub, not a mutation), so nothing currently gates on
+    # MANAGE_SETTINGS directly. Individual settings sub-pages get their own
+    # specific capability as they're built (MANAGE_USERS is the first).
+    MANAGE_SETTINGS = "admin"
 
 
 class PermissionDenied(PermissionError):

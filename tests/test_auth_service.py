@@ -9,6 +9,7 @@ from app.services.auth_service import (
     DEMO_USERS,
     AuthError,
     authenticate,
+    change_password,
     hash_password,
     seed_demo_users,
     verify_password,
@@ -92,6 +93,30 @@ def test_email_matching_is_case_and_whitespace_insensitive(db_session) -> None:
     session.flush()
     user = authenticate(session, "  LOWER@x.local  ", "pw")
     assert user.email == "lower@x.local"
+
+
+# ---- change_password (§10.3, Phase 4 Slice 3) ----
+
+
+def test_change_password_success(db_session) -> None:
+    user = _make_user(db_session, password="old-password")
+    change_password(db_session, user, "old-password", "brand-new-password")
+    assert verify_password(user.password_hash, "brand-new-password") is True
+    assert verify_password(user.password_hash, "old-password") is False
+
+
+def test_change_password_wrong_current_password_rejected(db_session) -> None:
+    user = _make_user(db_session, password="old-password")
+    with pytest.raises(AuthError, match="Current password is incorrect"):
+        change_password(db_session, user, "not-the-current-one", "brand-new-password")
+    assert verify_password(user.password_hash, "old-password") is True  # unchanged
+
+
+def test_change_password_too_short_rejected(db_session) -> None:
+    user = _make_user(db_session, password="old-password")
+    with pytest.raises(AuthError, match="at least 8 characters"):
+        change_password(db_session, user, "old-password", "short")
+    assert verify_password(user.password_hash, "old-password") is True  # unchanged
 
 
 def test_seed_demo_users_creates_all_three(db_session) -> None:

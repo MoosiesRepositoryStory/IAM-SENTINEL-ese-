@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% set active_nav = 'settings' %}
+{% block title %}Settings · IAM Sentinel{% endblock %}
+{% block crumb %}<b>Settings</b>{% endblock %}
+
+{% block main %}
+<div class="page-head">
+  <h1>Settings</h1>
+</div>
+<p class="page-sub">Account and workspace configuration.</p>
+
+<div class="settings-grid">
+  <a class="settings-card" href="{{ url_for('web.profile') }}">
+    <div class="settings-card-head"><span class="ico">◑</span> Profile</div>
+    <p>Your display info and password.</p>
+  </a>
+  {% if role_at_least(current_user.role, 'admin') %}
+  <a class="settings-card" href="{{ url_for('web.users_admin') }}">
+    <div class="settings-card-head"><span class="ico">☷</span> Users</div>
+    <p>Add teammates, manage roles, activate or deactivate accounts.</p>
+  </a>
+  {% endif %}
+</div>
+{% endblock %}

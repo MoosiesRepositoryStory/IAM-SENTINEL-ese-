@@ -69,6 +69,21 @@ def authenticate(session: Session, email: str, password: str) -> AppUser:
     return user
 
 
+def change_password(session: Session, user: AppUser, current_password: str, new_password: str) -> None:
+    """Self-service password change (§10.3, Phase 4 Slice 3) — any
+    authenticated user, not just admins; requires the current password so a
+    hijacked/left-open session can't silently lock out the real owner.
+    Unlike :func:`authenticate`, the error messages here are specific (which
+    field was wrong) — there's no enumeration risk once the caller is already
+    an authenticated, identified session."""
+    if not verify_password(user.password_hash, current_password):
+        raise AuthError("Current password is incorrect.")
+    if not new_password or len(new_password) < 8:
+        raise AuthError("New password must be at least 8 characters.")
+    user.password_hash = hash_password(new_password)
+    session.flush()
+
+
 def seed_demo_users(session: Session) -> None:
     """Idempotently ensure the three demo accounts exist. Safe to call on
     every app boot (``create_app()``) — an existing row (matched by email) is

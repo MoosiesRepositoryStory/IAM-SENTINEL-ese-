@@ -49,7 +49,7 @@
     <a class="nav-item {{ 'active' if nav == 'accounts' }}" href="{{ url_for('web.accounts') }}"><span class="ico">☁</span> Accounts</a>
     <a class="nav-item {{ 'active' if nav == 'exceptions' }}"><span class="ico">⊘</span> Exceptions</a>
     <div class="sidebar-spacer"></div>
-    <a class="nav-item {{ 'active' if nav == 'settings' }}"><span class="ico">⚙</span> Settings</a>
+    <a class="nav-item {{ 'active' if nav == 'settings' }}" href="{{ url_for('web.settings_index') }}"><span class="ico">⚙</span> Settings</a>
   </aside>
 
   <header class="topbar">
@@ -62,7 +62,7 @@
       </button>
       {% if current_user.is_authenticated %}
       <div class="user-chip" title="{{ current_user.email }} · {{ current_user.role | replace('_', ' ') | capitalize }}">
-        <span class="user-chip-name">{{ current_user.display_name }}</span>
+        <a class="user-chip-name" href="{{ url_for('web.profile') }}">{{ current_user.display_name }}</a>
         <form method="post" action="{{ url_for('web.logout') }}" hx-post="{{ url_for('web.logout') }}">
           <button type="submit" class="icon-btn" title="Sign out" aria-label="Sign out">⏻</button>
         </form>
