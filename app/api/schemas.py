@@ -1,4 +1,5 @@
-"""Marshmallow schemas for the /api/v1 read surface (§10.4, Phase 4 Slice 4a).
+"""Marshmallow schemas for /api/v1 (§10.4). Slice 4a's read surface plus
+Slice 4b's mutating request/response shapes.
 
 Hand-written (not SQLAlchemy-auto-generated) — matching this codebase's
 existing style of plain dataclasses over the read services rather than
@@ -11,11 +12,20 @@ no manual dict-building needed in the routes.
 Timestamps are dumped as-is: every stored timestamp is already an ISO-8601
 UTC string at the source (``app.models.base.now_iso``), so there is nothing
 to convert.
+
+**Slice 4b request bodies are JSON, not the HTML app's ``multipart/
+x-www-form-urlencoded``** — the API is JSON throughout (matches 4a's read
+surface and the login route already built in 4a). Where the HTML wizard reads
+an uploaded file (``_read_upload`` in ``app.web.views``), it immediately
+decodes it to plain UTF-8 text before ever reaching ``connect_account`` — so
+JSON string fields (``inventory_text``/``policies_json``/``logs_text``) are
+the exact same contract ``connect_account`` already accepts, not a lesser
+substitute for a real file upload.
 """
 
 from __future__ import annotations
 
-from marshmallow import Schema, fields
+from marshmallow import Schema, fields, validate
 
 # ---- errors ----------------------------------------------------------------
 
@@ -291,3 +301,147 @@ class CheckCatalogSchema(Schema):
     remediation = fields.String()
     compliance_tags = fields.List(fields.String())
     finding_count = fields.Integer()
+
+
+# ---- Slice 4b: accounts mutations ------------------------------------------
+
+
+class ThresholdsSchema(Schema):
+    """Mirrors ``app.domain.records.Thresholds`` — all fields optional, each
+    defaulting to that dataclass's own default (also the HTML wizard's
+    default, per ``views._parse_thresholds``)."""
+
+    inactivity_days = fields.Integer(load_default=90)
+    password_age_days = fields.Integer(load_default=90)
+    key_age_days = fields.Integer(load_default=90)
+    failed_logins = fields.Integer(load_default=5)
+
+
+class ConnectAccountRequestSchema(Schema):
+    """Mirrors the HTML wizard's 3-step submit (§5.3) collapsed into one JSON
+    body. ``thresholds`` omitted entirely means "use the defaults"; the
+    ``schedule_*`` fields are the wizard step 3's optional recurring-scan
+    section (§5.5) — set ``schedule_enabled`` to create one atomically with
+    the account, same as the HTML path."""
+
+    name = fields.String(required=True)
+    method = fields.String(
+        load_default="demo", validate=validate.OneOf(("demo", "assume_role", "upload"))
+    )
+    role_arn = fields.String(load_default=None, allow_none=True)
+    external_id = fields.String(load_default=None, allow_none=True)
+    inventory_text = fields.String(load_default=None, allow_none=True)
+    policies_json = fields.String(load_default=None, allow_none=True)
+    logs_text = fields.String(load_default=None, allow_none=True)
+    thresholds = fields.Nested(ThresholdsSchema, load_default=dict)
+    schedule_enabled = fields.Boolean(load_default=False)
+    schedule_cron = fields.String(load_default="")
+
+
+class ConnectAccountResponseSchema(Schema):
+    account_id = fields.Integer()
+    run_id = fields.Integer()
+    schedule_id = fields.Integer(allow_none=True)
+
+
+class ScanResponseSchema(Schema):
+    run_id = fields.Integer()
+
+
+class ScheduleWriteRequestSchema(Schema):
+    cron = fields.String(required=True)
+    enabled = fields.Boolean(load_default=True)
+
+
+class ScheduleDetailSchema(Schema):
+    """The full ``Schedule`` row — distinct from the summary ``ScheduleCoreSchema``
+    nested inside ``AccountSchema``, same relationship as ``RunDetailSchema``
+    vs. ``RunCoreSchema`` above."""
+
+    id = fields.Integer()
+    account_id = fields.Integer()
+    cron = fields.String()
+    enabled = fields.Boolean()
+    last_run_at = fields.String(allow_none=True)
+    next_run_at = fields.String(allow_none=True)
+
+
+class ScheduleRunNowResponseSchema(Schema):
+    run_id = fields.Integer()
+
+
+# ---- Slice 4b: findings mutations -------------------------------------------
+
+
+class TransitionRequestSchema(Schema):
+    to_status = fields.String(required=True)
+    note = fields.String(load_default=None, allow_none=True)
+
+
+class SuppressRequestSchema(Schema):
+    """No ``expires_at`` — suppression is "don't show me this," not
+    time-boxed (§7.4, matches ``views.finding_suppress``'s docstring)."""
+
+    reason = fields.String(required=True)
+
+
+class AcceptRiskRequestSchema(Schema):
+    reason = fields.String(required=True)
+    expires_at = fields.String(load_default=None, allow_none=True)
+
+
+class CommentRequestSchema(Schema):
+    body = fields.String(required=True)
+
+
+class AssignRequestSchema(Schema):
+    """Mirrors the HTML form field exactly (``views.finding_assign`` /
+    ``collaboration.assign``): ``"me"`` assigns the caller, ``""``/``"none"``
+    unassigns, anything else is parsed as a numeric user id."""
+
+    assignee_id = fields.String(load_default="", allow_none=True)
+
+
+# ---- Slice 4b: bulk findings mutations --------------------------------------
+
+
+class BulkTransitionRequestSchema(Schema):
+    group_ids = fields.List(fields.Integer(), required=True)
+    to_status = fields.String(required=True)
+    note = fields.String(load_default=None, allow_none=True)
+
+
+class BulkAssignRequestSchema(Schema):
+    group_ids = fields.List(fields.Integer(), required=True)
+    assignee_id = fields.String(load_default="", allow_none=True)
+
+
+class BulkSuppressRequestSchema(Schema):
+    group_ids = fields.List(fields.Integer(), required=True)
+    reason = fields.String(required=True)
+
+
+class BulkAcceptRiskRequestSchema(Schema):
+    group_ids = fields.List(fields.Integer(), required=True)
+    reason = fields.String(required=True)
+    expires_at = fields.String(load_default=None, allow_none=True)
+
+
+class BulkFailureSchema(Schema):
+    group_id = fields.Integer()
+    reason = fields.String()
+
+
+class BulkResultSchema(Schema):
+    """Mirrors ``bulk_service.BulkResult`` — ``failed`` is a list of
+    ``(group_id, reason)`` tuples on the dataclass; re-shaped to objects
+    here since a bare 2-tuple doesn't have a natural JSON field-name mapping."""
+
+    action = fields.String()
+    succeeded = fields.List(fields.Integer())
+    count = fields.Integer()
+    failed = fields.Method("get_failed")
+
+    def get_failed(self, obj: object) -> list[dict[str, object]]:
+        failed: list[tuple[int, str]] = getattr(obj, "failed", [])
+        return [{"group_id": gid, "reason": reason} for gid, reason in failed]

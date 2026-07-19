@@ -39,9 +39,7 @@ def list_principals_route(args: dict) -> tuple[list, int, dict]:
         run_id = _resolve_run_id(session, args["run_id"])
         if run_id is None:
             return [], 200, total_count_headers(0)
-        rows = list_principals_by_blast(
-            session, run_id, limit=args["limit"], offset=args["offset"]
-        )
+        rows = list_principals_by_blast(session, run_id, limit=args["limit"], offset=args["offset"])
         total = count_principals(session, run_id)
     return rows, 200, total_count_headers(total)
 
@@ -63,5 +61,7 @@ def get_principal_graph_route(args: dict, principal_uid: str) -> object:
             raise ApiError(404, "not_found", "No completed run to derive a graph from.")
         graph = principal_graph(session, run_id, principal_uid)
         if graph is None:
-            raise ApiError(404, "not_found", f"Principal {principal_uid!r} not found in run {run_id}.")
+            raise ApiError(
+                404, "not_found", f"Principal {principal_uid!r} not found in run {run_id}."
+            )
     return graph

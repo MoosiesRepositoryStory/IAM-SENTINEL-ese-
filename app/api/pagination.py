@@ -15,7 +15,9 @@ MAX_LIMIT = 200
 
 
 class PaginationArgsSchema(Schema):
-    limit = fields.Integer(load_default=DEFAULT_LIMIT, validate=validate.Range(min=1, max=MAX_LIMIT))
+    limit = fields.Integer(
+        load_default=DEFAULT_LIMIT, validate=validate.Range(min=1, max=MAX_LIMIT)
+    )
     offset = fields.Integer(load_default=0, validate=validate.Range(min=0))
 
 

@@ -65,9 +65,7 @@ def get_run_findings_route(pagination: dict, run_id: int) -> tuple[list, int, di
 
 @blp.route("/<int:run_id>/report.json")
 @require_api_role(Capability.VIEW)
-@blp.doc(
-    responses={200: {"description": "Run report", "content": {"application/json": {}}}}
-)
+@blp.doc(responses={200: {"description": "Run report", "content": {"application/json": {}}}})
 def get_run_report_json(run_id: int) -> Response:
     with session_scope() as session:
         try:

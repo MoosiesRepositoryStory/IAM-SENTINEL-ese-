@@ -33,9 +33,7 @@ from app.services.rbac import at_least
 ALGORITHM = "HS256"
 TOKEN_TTL = timedelta(hours=12)
 
-blp = Blueprint(
-    "auth", __name__, url_prefix="/api/v1/auth", description="Token issuance"
-)
+blp = Blueprint("auth", __name__, url_prefix="/api/v1/auth", description="Token issuance")
 
 F = TypeVar("F", bound=Callable[..., Any])
 
