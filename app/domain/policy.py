@@ -48,7 +48,24 @@ def not_actions(statement: dict[str, Any]) -> list[str]:
 
 
 def resources(statement: dict[str, Any]) -> list[str]:
-    return _as_list(statement.get("Resource")) or _as_list(statement.get("NotResource"))
+    """The ``Resource`` values a statement applies to.
+
+    A ``NotResource`` statement applies to *every* resource except the ones
+    listed — the complement of the list, not the list itself. Returning that
+    list as if it were the granted set would be a semantic inversion (the one
+    resource a NotResource statement excludes is exactly the one this reader
+    would report as "the" resource). This structural reader doesn't attempt
+    to represent "everything except X" precisely; consistent with how
+    ``NotAction`` is folded into the wildcard sentinel in
+    :func:`granted_actions`, a NotResource statement is treated as unbounded
+    (``["*"]``) rather than inverted.
+    """
+    resource = _as_list(statement.get("Resource"))
+    if resource:
+        return resource
+    if statement.get("NotResource") is not None:
+        return ["*"]
+    return []
 
 
 def is_allow(statement: dict[str, Any]) -> bool:

@@ -117,6 +117,43 @@ def test_tight_policy_produces_no_wildcard_finding() -> None:
     assert _run_check("policy.wildcard_action", ds) == []
 
 
+# --- NotResource: sensitive_action_on_star / overly_broad_resource ----------
+def test_sensitive_action_on_not_resource_is_treated_as_broad() -> None:
+    """A sensitive action scoped by NotResource (applies to everything
+    except one resource) is structurally as broad as Resource '*' — must
+    still fire, not be missed because the excluded resource isn't the
+    literal string '*'."""
+    doc = {
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": ["iam:PassRole"],
+                "NotResource": "arn:aws:iam::123456789012:role/one-safe-role",
+            }
+        ]
+    }
+    ds = NormalizedDataset(policies=[policy("Broad", doc)])
+    findings = _run_check("policy.sensitive_action_on_star", ds)
+    assert len(findings) == 1
+
+
+def test_non_sensitive_not_resource_grant_is_overly_broad() -> None:
+    # s3:ListBucket (unlike s3:GetObject) isn't in the sensitive catalog, so
+    # this exercises overly_broad_resource rather than sensitive_action_on_star.
+    doc = {
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": ["s3:ListBucket"],
+                "NotResource": "arn:aws:s3:::one-excluded-bucket",
+            }
+        ]
+    }
+    ds = NormalizedDataset(policies=[policy("Broad2", doc)])
+    findings = _run_check("policy.overly_broad_resource", ds)
+    assert len(findings) == 1
+
+
 # --- trust wildcard principal ------------------------------------------------
 def _role_with_trust(uid: str, trust: dict):
     return principal(uid, kind="role", raw={"AssumeRolePolicyDocument": trust})
