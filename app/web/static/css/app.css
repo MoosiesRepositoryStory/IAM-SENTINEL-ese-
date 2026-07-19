@@ -471,6 +471,22 @@ table.findings { width: 100%; border-collapse: collapse; font-size: 13px; }
 }
 .exc-expiry-field input[type="date"]:focus { outline: none; border-color: var(--accent); }
 
+/* ---- Ticket integrations (§7.5, Phase 4 Slice 5) ---- */
+.ticket-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600;
+  background: var(--accent-soft); color: var(--accent); border: 1px solid transparent;
+  text-decoration: none;
+}
+a.ticket-chip:hover { border-color: var(--accent); }
+.foot-secondary { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.integration-row { display: flex; align-items: center; gap: 10px; }
+.integration-kind {
+  padding: 1px 6px; border-radius: 5px; font-size: 10.5px; font-weight: 600;
+  background: var(--bg-elev-2); color: var(--text-muted); border: 1px solid var(--border);
+  text-transform: uppercase; letter-spacing: .03em;
+}
+
 /* ---- Selection / row focus / bulk bar (§8.2, §8.4) ---- */
 .sel-col, .menu-col { width: 34px; text-align: center; }
 .sel-col input, .menu-col .menu-trigger { cursor: pointer; }

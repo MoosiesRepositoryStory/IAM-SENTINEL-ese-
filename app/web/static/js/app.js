@@ -389,7 +389,11 @@ window.Sentinel = (function () {
       }));
     }
     menu.appendChild(item('Re-run this check', { disabled: true, hint: 'Phase 2' }));
-    menu.appendChild(item('Create ticket…', { disabled: true, hint: 'not built' }));
+    if (roleAtLeast('analyst')) {
+      menu.appendChild(item('Create ticket…', {
+        onClick: () => openDrawer(groupIdOf(tr), { action: 'create_ticket' }),
+      }));
+    }
     menu.appendChild(sep());
 
     menu.appendChild(submenuGroup('Copy', [

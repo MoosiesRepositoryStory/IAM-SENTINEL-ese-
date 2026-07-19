@@ -19,6 +19,10 @@
     <div class="settings-card-head"><span class="ico">☷</span> Users</div>
     <p>Add teammates, manage roles, activate or deactivate accounts.</p>
   </a>
+  <a class="settings-card" href="{{ url_for('web.integrations_admin') }}">
+    <div class="settings-card-head"><span class="ico">🎫</span> Integrations</div>
+    <p>Webhook, Jira, and Slack targets for "Create ticket" on a finding.</p>
+  </a>
   {% endif %}
 </div>
 {% endblock %}

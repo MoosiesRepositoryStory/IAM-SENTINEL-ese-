@@ -17,6 +17,7 @@ with no extra round trip.
 
 from __future__ import annotations
 
+from flask import url_for
 from flask_smorest import Blueprint
 from marshmallow import fields
 
@@ -35,9 +36,11 @@ from app.api.schemas import (
     FindingDetailSchema,
     FindingSchema,
     SuppressRequestSchema,
+    TicketRequestSchema,
     TransitionRequestSchema,
 )
 from app.db import session_scope
+from app.integrations.base import IntegrationError
 from app.services.account_service import current_account
 from app.services.bulk_service import bulk_assign, bulk_exception, bulk_transition
 from app.services.collaboration import CommentError, add_comment, assign
@@ -50,6 +53,7 @@ from app.services.exception_service import (
 from app.services.finding_detail import FindingDetail, get_finding_detail
 from app.services.finding_query import FindingFilters, query_findings
 from app.services.rbac import Capability, PermissionDenied
+from app.services.ticket_service import TicketError, create_ticket
 from app.services.workflow_service import InvalidTransition, transition
 
 blp = Blueprint("findings", __name__, url_prefix="/api/v1/findings", description="Findings")
@@ -233,6 +237,31 @@ def assign_route(payload: dict, group_id: int) -> object:
     with session_scope() as session:
         detail = _detail_or_404(session, group_id, actor.role)
         assign(session, detail.group, assignee_id=assignee_id, actor_id=actor.id)
+        return _fresh_detail(session, group_id, actor.role)
+
+
+@blp.route("/<int:group_id>/ticket", methods=["POST"])
+@require_api_role(Capability.CREATE_TICKET)
+@blp.arguments(TicketRequestSchema, location="json")
+@blp.response(200, FindingDetailSchema)
+def ticket_route(payload: dict, group_id: int) -> object:
+    """Mirrors ``views.finding_create_ticket`` (§7.5) — same
+    ``ticket_service.create_ticket`` call, same refreshed-detail response
+    shape as every other single-item mutation in this module."""
+    actor = current_api_user()
+    with session_scope() as session:
+        detail = _detail_or_404(session, group_id, actor.role)
+        finding_url = url_for("web.finding_drawer", group_id=group_id, _external=True)
+        try:
+            create_ticket(
+                session, detail.group, detail.finding, target_id=payload["target_id"],
+                title=payload["title"], body=payload["body"], finding_url=finding_url,
+                actor_id=actor.id,
+            )
+        except TicketError as exc:
+            raise ApiError(400, "validation_error", str(exc)) from exc
+        except IntegrationError as exc:
+            raise ApiError(502, "integration_unreachable", str(exc)) from exc
         return _fresh_detail(session, group_id, actor.role)
 
 

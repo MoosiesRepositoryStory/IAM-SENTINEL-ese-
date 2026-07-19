@@ -16,8 +16,16 @@ from flask import Response, abort, redirect, render_template, request, url_for
 from flask_login import current_user
 
 from app.db import session_scope
+from app.integrations.registry import KINDS
 from app.models import AppUser
 from app.services.auth_service import AuthError, change_password
+from app.services.integration_service import (
+    IntegrationError,
+    create_target,
+    delete_target,
+    list_targets,
+    set_enabled,
+)
 from app.services.rbac import ROLES, Capability
 from app.services.user_service import (
     LastAdminError,
@@ -102,6 +110,71 @@ def users_toggle_active(user_id: int) -> Response | str | tuple[str, int]:
         except (UserError, LastAdminError) as exc:
             return _users_page(error=str(exc), status=400)
     return cast(Response, redirect(url_for("web.users_admin")))
+
+
+# -- Integration targets (§7.5, Phase 4 Slice 5): admin-only --------------
+
+
+def _integrations_page(*, error: str | None = None, form_open: bool = False, status: int = 200):  # noqa: ANN201
+    with session_scope() as session:
+        targets = list_targets(session)
+        for t in targets:
+            session.expunge(t)
+    body = render_template(
+        "settings_integrations.html", targets=targets, kinds=KINDS, error=error, form_open=form_open,
+    )
+    return (body, status) if status != 200 else body
+
+
+@bp.get("/settings/integrations")
+@require_role(Capability.MANAGE_INTEGRATIONS)
+def integrations_admin() -> str:
+    return _integrations_page()
+
+
+@bp.post("/settings/integrations")
+@require_role(Capability.MANAGE_INTEGRATIONS)
+def integrations_create() -> Response | str | tuple[str, int]:
+    kind = request.form.get("kind", "")
+    config: dict[str, str] = {}
+    if kind == "webhook":
+        config = {"url": request.form.get("url", "")}
+    elif kind == "jira":
+        config = {"project_key": request.form.get("project_key", "")}
+    elif kind == "slack":
+        config = {"channel": request.form.get("channel", "")}
+    with session_scope() as session:
+        try:
+            create_target(
+                session, kind=kind, name=request.form.get("name", ""), config=config,
+                actor_id=current_user.id,
+            )
+        except IntegrationError as exc:
+            return _integrations_page(error=str(exc), form_open=True, status=400)
+    return cast(Response, redirect(url_for("web.integrations_admin")))
+
+
+@bp.post("/settings/integrations/<int:target_id>/toggle")
+@require_role(Capability.MANAGE_INTEGRATIONS)
+def integrations_toggle(target_id: int) -> Response | str | tuple[str, int]:
+    enabled = request.form.get("enabled") == "1"
+    with session_scope() as session:
+        try:
+            set_enabled(session, target_id, enabled, actor_id=current_user.id)
+        except IntegrationError as exc:
+            return _integrations_page(error=str(exc), status=400)
+    return cast(Response, redirect(url_for("web.integrations_admin")))
+
+
+@bp.post("/settings/integrations/<int:target_id>/delete")
+@require_role(Capability.MANAGE_INTEGRATIONS)
+def integrations_delete(target_id: int) -> Response | str | tuple[str, int]:
+    with session_scope() as session:
+        try:
+            delete_target(session, target_id, actor_id=current_user.id)
+        except IntegrationError as exc:
+            return _integrations_page(error=str(exc), status=400)
+    return cast(Response, redirect(url_for("web.integrations_admin")))
 
 
 # -- Self-service profile (§10.3): any authenticated user, own account only --

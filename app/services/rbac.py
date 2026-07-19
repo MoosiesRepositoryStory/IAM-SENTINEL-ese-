@@ -71,12 +71,13 @@ class Capability:
     COMMENT = "analyst"
     SUPPRESS = "analyst"
     ACCEPT_RISK_CREATE = "admin"
-    CREATE_TICKET = "analyst"  # not yet wired to a route (Slice 5)
+    CREATE_TICKET = "analyst"  # gates POST /findings/<id>/ticket (Slice 5)
     MANAGE_USERS = "admin"  # gates GET+POST /settings/users/* (Slice 3)
+    MANAGE_INTEGRATIONS = "admin"  # gates /settings/integrations/* (Slice 5)
     # Reserved: the /settings shell itself is VIEW-level (any authenticated
     # user — it's a nav hub, not a mutation), so nothing currently gates on
     # MANAGE_SETTINGS directly. Individual settings sub-pages get their own
-    # specific capability as they're built (MANAGE_USERS is the first).
+    # specific capability as they're built (MANAGE_USERS, MANAGE_INTEGRATIONS).
     MANAGE_SETTINGS = "admin"
 
 

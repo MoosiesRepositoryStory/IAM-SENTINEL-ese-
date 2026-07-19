@@ -460,6 +460,61 @@ def test_bulk_suppress(client, db_session) -> None:
     assert group.current_status == "suppressed"
 
 
+# ---- findings: ticket (§7.5, Phase 4 Slice 5) -------------------------------
+
+
+def test_create_ticket_via_api(client, db_session) -> None:
+    from app.services.integration_service import create_target
+
+    seeded = _seed(db_session)
+    target = create_target(db_session, kind="jira", name="Jira", config={"project_key": "SEC"})
+    db_session.commit()
+
+    token = _token(client, "analyst")
+    resp = client.post(
+        f"/api/v1/findings/{seeded['group_id']}/ticket",
+        json={"target_id": target.id, "title": "MFA gap", "body": "details"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["group"]["ticket_ref"] is not None
+    assert "(simulated)" in body["group"]["ticket_ref"]
+    assert body["group"]["ticket_url"] is None
+
+
+def test_create_ticket_unknown_target_is_400(client, db_session) -> None:
+    seeded = _seed(db_session)
+    token = _token(client, "analyst")
+    resp = client.post(
+        f"/api/v1/findings/{seeded['group_id']}/ticket",
+        json={"target_id": _BOGUS, "title": "x", "body": ""},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 400
+    assert resp.get_json()["error"]["code"] == "validation_error"
+
+
+def test_create_ticket_requires_admin_for_accept_risk_is_unaffected(client, db_session) -> None:
+    """CREATE_TICKET is analyst-level, distinct from ACCEPT_RISK_CREATE —
+    confirms the two capabilities weren't accidentally conflated."""
+    from app.services.integration_service import create_target
+
+    seeded = _seed(db_session)
+    target = create_target(db_session, kind="webhook", name="Hook", config={"url": "https://x"})
+    db_session.commit()
+
+    token = _token(client, "analyst")
+    resp = client.post(
+        f"/api/v1/findings/{seeded['group_id']}/ticket",
+        json={"target_id": target.id, "title": "x", "body": ""},
+        headers=_auth(token),
+    )
+    # A real (unreachable) webhook URL — expect a 502 (integration_unreachable),
+    # not a 403 — proving the role gate itself passed an analyst through.
+    assert resp.status_code in (200, 502)
+
+
 # ---- role matrix + unauthenticated -----------------------------------------
 # (method, path, json_body, minimum_role) — bogus ids throughout; a
 # non-403 downstream 404/409/400 is proof enough that the role gate let the
@@ -482,6 +537,7 @@ def _matrix() -> list[tuple[str, str, dict, str]]:
         ("POST", "/api/v1/findings/bulk/assign", {"group_ids": [], "assignee_id": "me"}, "analyst"),
         ("POST", "/api/v1/findings/bulk/suppress", {"group_ids": [], "reason": "x"}, "analyst"),
         ("POST", "/api/v1/findings/bulk/accept-risk", {"group_ids": [], "reason": "x"}, "admin"),
+        ("POST", f"/api/v1/findings/{_BOGUS}/ticket", {"target_id": 1, "title": "x", "body": "x"}, "analyst"),
     ]
 
 
@@ -489,6 +545,7 @@ _MATRIX_IDS = [
     "connect", "scan", "schedule-save", "schedule-delete", "schedule-run-now",
     "transition", "suppress", "accept-risk", "comment", "assign",
     "bulk-transition", "bulk-assign", "bulk-suppress", "bulk-accept-risk",
+    "ticket",
 ]
 
 

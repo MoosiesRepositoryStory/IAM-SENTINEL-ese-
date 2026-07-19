@@ -15,6 +15,7 @@ from flask_login import current_user
 
 from app.db import session_scope
 from app.domain.records import Thresholds
+from app.integrations.base import IntegrationError
 from app.models import Account, RunSummary
 from app.scheduler import fire_schedule, remove_schedule_job, sync_schedule
 from app.services.account_service import current_account as _current_account
@@ -47,6 +48,7 @@ from app.services.finding_query import (
     sort_to_query,
 )
 from app.services.graph_view import list_principals_by_blast, principal_graph
+from app.services.integration_service import list_enabled_targets
 from app.services.rbac import Capability, PermissionDenied, at_least
 from app.services.run_query import get_run_row, list_runs, score_trend
 from app.services.scan_service import enqueue_scan
@@ -56,6 +58,7 @@ from app.services.schedule_service import (
     get_schedule,
     upsert_schedule,
 )
+from app.services.ticket_service import TicketError, create_ticket
 from app.services.workflow_service import (
     STATUS_LABELS,
     InvalidTransition,
@@ -587,6 +590,7 @@ def _render_drawer(session, group_id: int, **extra) -> str:  # noqa: ANN001, ANN
         d=detail,
         status_labels=STATUS_LABELS,
         users=active_users(session),
+        integration_targets=list_enabled_targets(session),
         **extra,
     )
 
@@ -597,9 +601,10 @@ def finding_drawer(group_id: int) -> Response | str:
     (deep link, §8.11) → the full findings page with the drawer auto-opened.
 
     Optional ``?tab=`` opens on a specific tab (used by the context menu's "View
-    evidence" / "Add comment…" items) and ``?action=suppressed|accepted_risk`` also
-    pre-reveals that exception form (used by "Suppress finding…" / "Accept
-    risk…") — both reuse markup/routes already built in 2a-2c, just pre-seeded.
+    evidence" / "Add comment…" items) and ``?action=suppressed|accepted_risk|
+    create_ticket`` also pre-reveals that exception form / the create-ticket
+    modal (used by "Suppress finding…" / "Accept risk…" / "Create ticket…") —
+    all reuse markup/routes already built in earlier slices, just pre-seeded.
     """
     tab = request.args.get("tab")
     action = request.args.get("action")
@@ -710,6 +715,42 @@ def finding_assign(group_id: int) -> Response | str:
             assignee_id = int(raw) if raw.isdigit() else None
         assign(session, detail.group, assignee_id=assignee_id, actor_id=actor.id)
         return _render_drawer(session, group_id, oob_assignee=True)
+
+
+@bp.post("/findings/<int:group_id>/ticket")
+@require_role(Capability.CREATE_TICKET)
+def finding_create_ticket(group_id: int) -> Response | str | tuple[str, int]:
+    """Create a ticket/notification via a configured integration target
+    (§7.5) and return the refreshed drawer, which now shows the ticket chip.
+    ``title``/``body`` come from the modal, prefilled client-side from the
+    finding but editable — the server takes whatever was actually submitted."""
+    target_id = request.form.get("target_id", type=int)
+    title = request.form.get("title", "")
+    body = request.form.get("body", "")
+    with session_scope() as session:
+        detail = get_finding_detail(session, group_id)
+        if detail is None:
+            abort(404)
+        actor = current_user
+        finding_url = url_for("web.finding_drawer", group_id=group_id, _external=True)
+        try:
+            if target_id is None:
+                raise TicketError("Choose an integration target.")
+            create_ticket(
+                session, detail.group, detail.finding, target_id=target_id,
+                title=title, body=body, finding_url=finding_url, actor_id=actor.id,
+            )
+        except (TicketError, IntegrationError) as exc:
+            # open_action keeps the modal open (rather than the generic
+            # top-of-drawer error banner, which would render hidden behind
+            # the modal's own backdrop) so the user sees why and can retry
+            # without reopening it from scratch; ticket_form_values preserves
+            # what they typed rather than resetting to the prefilled defaults.
+            return _render_drawer(
+                session, group_id, open_action="create_ticket", ticket_error=str(exc),
+                ticket_form_values={"target_id": target_id, "title": title, "body": body},
+            ), 400
+        return _render_drawer(session, group_id)
 
 
 def _is_htmx() -> bool:

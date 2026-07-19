@@ -26,15 +26,17 @@
 {% set f = d.finding %}
 {% set active_tab = focus_tab | default('overview', true) %}
 {% set sev_class = {'CRITICAL': 'r-crit', 'HIGH': 'r-high', 'MEDIUM': 'r-med', 'LOW': 'r-low'} %}
-{# Only these two values are meaningful to the reveal-form Alpine state below
-   (§8.3's "Suppress finding…" / "Accept risk…" context-menu items pre-open the
-   drawer straight to the right form via ?action=). Anything else is ignored. #}
+{# Only these values are meaningful to the reveal-form Alpine state below
+   (§8.3's "Suppress finding…" / "Accept risk…" / "Create ticket…" context-menu
+   items pre-open the drawer straight to the right form via ?action=). Anything
+   else is ignored. #}
 {% set seed_action = open_action if open_action in ('suppressed', 'accepted_risk') else none %}
+{% set seed_ticket = (open_action == 'create_ticket') | tojson %}
 
 <div class="drawer-backdrop" onclick="Sentinel.closeDrawer()"></div>
 <aside class="drawer-panel" role="dialog" aria-label="Finding detail"
        data-group-id="{{ d.group.id }}"
-       x-data="{{ '{ excForm: ' ~ (('\'' ~ seed_action ~ '\'') if seed_action else 'null') ~ ' }' }}">
+       x-data="{{ '{ excForm: ' ~ (('\'' ~ seed_action ~ '\'') if seed_action else 'null') ~ ', ticketModal: ' ~ seed_ticket ~ ' }' }}">
   <header class="drawer-head">
     <div class="drawer-head-top">
       <span class="risk {{ sev_class.get(f.severity, 'r-low') }}">{{ f.risk_score }}</span>
@@ -42,6 +44,13 @@
       <span class="status st-{{ d.group.current_status }}" id="drawer-status">
         {{ status_labels.get(d.group.current_status, d.group.current_status) }}
       </span>
+      {% if d.group.ticket_ref %}
+        {% if d.group.ticket_url %}
+        <a class="ticket-chip" href="{{ d.group.ticket_url }}" target="_blank" rel="noopener" title="Linked ticket">🎫 {{ d.group.ticket_ref }}</a>
+        {% else %}
+        <span class="ticket-chip" title="No browsable link for this target">🎫 {{ d.group.ticket_ref }}</span>
+        {% endif %}
+      {% endif %}
       <button class="icon-btn drawer-close" onclick="Sentinel.closeDrawer()" aria-label="Close">✕</button>
     </div>
     <h2 class="drawer-title">{{ f.title }}</h2>
@@ -275,5 +284,78 @@
     {% else %}
     <span class="muted">No status actions available.</span>
     {% endif %}
+
+    {% if role_at_least(current_user.role, 'analyst') %}
+    <div class="foot-secondary">
+      <button type="button" class="btn ghost tiny" @click="ticketModal = true">🎫 Create ticket…</button>
+    </div>
+    {% endif %}
   </footer>
+
+  {% if role_at_least(current_user.role, 'analyst') %}
+  <div class="wizard-overlay" x-show="ticketModal" x-cloak style="display:none"
+       @keydown.escape.window="ticketModal = false"
+       @click="if ($event.target === $el) ticketModal = false">
+    {% if integration_targets %}
+    <form class="wizard-panel" role="dialog" aria-label="Create ticket"
+          hx-post="{{ url_for('web.finding_create_ticket', group_id=d.group.id) }}"
+          hx-target="#drawer" hx-swap="innerHTML" @click.stop>
+      <div class="wizard-head">
+        <b>Create ticket</b>
+        <button type="button" class="icon-btn drawer-close" aria-label="Close" @click="ticketModal = false">✕</button>
+      </div>
+      <div class="wizard-body">
+        {% if ticket_error %}<div class="wizard-error">{{ ticket_error }}</div>{% endif %}
+        <label class="wfield"><span>Target</span>
+          <select name="target_id" class="text-input" required>
+            {% for t in integration_targets %}
+            <option value="{{ t.id }}" {{ 'selected' if ticket_form_values and ticket_form_values.target_id == t.id }}>{{ t.name }} ({{ t.kind }})</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="wfield"><span>Title</span>
+          <input type="text" name="title" class="text-input" required
+                 value="{{ ticket_form_values.title if ticket_form_values else f.title }}">
+        </label>
+        <label class="wfield"><span>Body</span>
+          <textarea name="body" class="note-input" rows="6">{% if ticket_form_values -%}
+{{ ticket_form_values.body }}
+{%- else -%}
+{{ f.title }}
+
+Check: {{ f.check_id }}
+Severity: {{ f.severity }}{% if f.principal_uid %}
+Principal: {{ f.principal_uid }}{% endif %}{% if f.resource %}
+Resource: {{ f.resource }}{% endif %}
+
+{{ f.recommendation }}
+
+{{ url_for('web.finding_drawer', group_id=d.group.id, _external=True) }}
+{%- endif %}</textarea>
+        </label>
+      </div>
+      <div class="wizard-foot">
+        <button type="button" class="btn ghost" @click="ticketModal = false">Cancel</button>
+        <button type="submit" class="btn primary" style="margin-left:auto">Create ticket</button>
+      </div>
+    </form>
+    {% else %}
+    <div class="wizard-panel" role="dialog" aria-label="Create ticket" @click.stop>
+      <div class="wizard-head">
+        <b>Create ticket</b>
+        <button type="button" class="icon-btn drawer-close" aria-label="Close" @click="ticketModal = false">✕</button>
+      </div>
+      <div class="wizard-body">
+        <p class="muted">No integration targets are configured yet.
+          {% if role_at_least(current_user.role, 'admin') %}
+          <a href="{{ url_for('web.integrations_admin') }}">Set one up in Settings →</a>
+          {% else %}
+          Ask an admin to set one up under Settings → Integrations.
+          {% endif %}
+        </p>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
 </aside>

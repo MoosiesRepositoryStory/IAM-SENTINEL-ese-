@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
+import threading
 from collections.abc import Iterator
 from datetime import timedelta
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 from app import db as db_module
@@ -50,6 +53,43 @@ def client(db_session):  # noqa: ANN001
     app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
     with app.test_client() as c:
         yield c
+
+
+class CapturingHandler(BaseHTTPRequestHandler):
+    """A real local HTTP server the ``local_http_server`` fixture below
+    spins up, for tests that need to prove something (``WebhookAdapter``,
+    §7.5) actually leaves the process rather than mocking the network call."""
+
+    received: list[dict] = []
+    respond_status = 200
+
+    def do_POST(self) -> None:  # noqa: N802 — stdlib method name
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length)
+        CapturingHandler.received.append(
+            {"path": self.path, "headers": dict(self.headers), "json": json.loads(body)}
+        )
+        self.send_response(CapturingHandler.respond_status)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(b"{}")
+
+    def log_message(self, *args: object) -> None:  # silence stdlib's stderr logging
+        pass
+
+
+@pytest.fixture
+def local_http_server() -> Iterator[HTTPServer]:
+    CapturingHandler.received = []
+    CapturingHandler.respond_status = 200
+    server = HTTPServer(("127.0.0.1", 0), CapturingHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield server
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
 
 
 def principal(uid: str, **kwargs) -> PrincipalRecord:

@@ -82,10 +82,15 @@ def _matrix() -> list[tuple[str, str, str, dict]]:
         ("POST", "/findings/bulk/assign", "analyst", {"group_ids": "", "assignee_id": "me"}),
         ("POST", "/findings/bulk/suppress", "analyst", {"group_ids": "", "reason": "x"}),
         ("POST", "/findings/bulk/accept-risk", "admin", {"group_ids": "", "reason": "x"}),
+        ("POST", f"/findings/{_BOGUS}/ticket", "analyst", {"target_id": "1", "title": "x", "body": "x"}),
         ("GET", "/settings/users", "admin", {}),
         ("POST", "/settings/users", "admin", {"email": "", "display_name": "", "role": "read_only", "password": ""}),
         ("POST", f"/settings/users/{_BOGUS}/role", "admin", {"role": "analyst"}),
         ("POST", f"/settings/users/{_BOGUS}/active", "admin", {"is_active": "0"}),
+        ("GET", "/settings/integrations", "admin", {}),
+        ("POST", "/settings/integrations", "admin", {"kind": "webhook", "name": "", "url": ""}),
+        ("POST", f"/settings/integrations/{_BOGUS}/toggle", "admin", {"enabled": "1"}),
+        ("POST", f"/settings/integrations/{_BOGUS}/delete", "admin", {}),
     ]
 
 
@@ -93,7 +98,10 @@ _MATRIX_IDS = [
     "connect", "scan", "schedule-save", "schedule-delete", "schedule-run-now",
     "transition", "suppress", "accept-risk", "comment", "assign",
     "bulk-transition", "bulk-assign", "bulk-suppress", "bulk-accept-risk",
+    "ticket",
     "settings-users-list", "settings-users-create", "settings-users-role", "settings-users-active",
+    "settings-integrations-list", "settings-integrations-create",
+    "settings-integrations-toggle", "settings-integrations-delete",
 ]
 
 
@@ -200,6 +208,27 @@ def test_bulk_accept_risk_stays_admin_only_regardless_of_selection(client, db_se
     assert group.current_status == "open"  # nothing happened
 
 
+def test_analyst_can_create_ticket_via_the_html_route(client, db_session) -> None:
+    """CREATE_TICKET is analyst-level (§10.2/§7.5), unlike CONNECT_ACCOUNT/
+    ACCEPT_RISK_CREATE — an analyst (not just admin) can actually create one."""
+    from app.services.integration_service import create_target
+
+    _, _, group_id = _seed(db_session)
+    target = create_target(db_session, kind="jira", name="Jira", config={"project_key": "SEC"})
+    db_session.commit()  # route layer opens its own connection to the same file
+
+    _login(client, "analyst")
+    resp = client.post(
+        f"/findings/{group_id}/ticket",
+        data={"target_id": str(target.id), "title": "MFA gap", "body": "details"},
+    )
+    assert resp.status_code == 200
+    group = db_session.get(FindingGroup, group_id)
+    db_session.refresh(group)
+    assert group.ticket_ref is not None
+    assert "(simulated)" in group.ticket_ref
+
+
 def test_read_only_never_sees_a_mutating_control_in_the_drawer(client, db_session) -> None:
     """Server-rendered proxy for the Playwright "viewer sees zero action
     controls" check: the drawer partial itself must carry no action buttons
@@ -212,6 +241,7 @@ def test_read_only_never_sees_a_mutating_control_in_the_drawer(client, db_sessio
     assert "No status actions available." in body
     assert 'name="body"' not in body  # comment box
     assert "Assign to me" not in body
+    assert "Create ticket…" not in body
 
 
 # ---- last-active-admin lockout (§10.3, Phase 4 Slice 3), route level ------

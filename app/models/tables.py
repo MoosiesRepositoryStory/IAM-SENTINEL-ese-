@@ -202,6 +202,7 @@ class FindingGroup(Base):
     current_status: Mapped[str] = mapped_column(String, nullable=False, default="open")
     assignee_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True)
     ticket_ref: Mapped[str | None] = mapped_column(String, nullable=True)
+    ticket_url: Mapped[str | None] = mapped_column(String, nullable=True)
 
     __table_args__ = (
         UniqueConstraint("account_id", "fingerprint", name="uq_group_account_fingerprint"),
@@ -315,6 +316,25 @@ class AuditEvent(Base, TimestampMixin):
     ip: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
+class IntegrationTarget(Base, TimestampMixin):
+    """A configured ticket/notification destination (§7.5, Phase 4 Slice 5):
+    one row per named target an admin has set up under Settings → Integrations.
+    ``kind`` selects the adapter (``app.integrations.registry``); ``config`` is
+    adapter-specific (e.g. webhook's ``{"url": ...}``, jira's
+    ``{"project_key": ...}``, slack's ``{"channel": ...}``) — kept as JSON
+    rather than one column per possible field since each kind's shape differs
+    and none of it is queried on, only read back whole by the adapter."""
+
+    __tablename__ = "integration_target"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    config: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True)
+
+
 __all__ = [
     "AppUser",
     "Account",
@@ -332,5 +352,6 @@ __all__ = [
     "SavedView",
     "Schedule",
     "AuditEvent",
+    "IntegrationTarget",
     "now_iso",
 ]

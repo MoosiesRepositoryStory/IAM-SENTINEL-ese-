@@ -188,6 +188,7 @@ class FindingGroupCoreSchema(Schema):
     current_status = fields.String()
     assignee_id = fields.Integer(allow_none=True)
     ticket_ref = fields.String(allow_none=True)
+    ticket_url = fields.String(allow_none=True)
 
 
 class ActivityItemSchema(Schema):
@@ -400,6 +401,14 @@ class AssignRequestSchema(Schema):
     unassigns, anything else is parsed as a numeric user id."""
 
     assignee_id = fields.String(load_default="", allow_none=True)
+
+
+class TicketRequestSchema(Schema):
+    """Mirrors the HTML "Create ticket" modal's form fields (§7.5)."""
+
+    target_id = fields.Integer(required=True)
+    title = fields.String(required=True)
+    body = fields.String(load_default="")
 
 
 # ---- Slice 4b: bulk findings mutations --------------------------------------
