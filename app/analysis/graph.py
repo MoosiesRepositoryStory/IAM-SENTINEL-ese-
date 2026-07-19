@@ -129,7 +129,9 @@ def build(dataset: NormalizedDataset) -> GraphResult:
             return
         seen_edges.add(key)
         edges.append(e)
-        g.add_edge(key[0], key[1], relation=e.relation, sensitive=e.is_sensitive, via=e.metadata.get("via"))
+        g.add_edge(
+            key[0], key[1], relation=e.relation, sensitive=e.is_sensitive, via=e.metadata.get("via")
+        )
 
     principal_uids = {p.principal_uid for p in dataset.principals}
     for p in dataset.principals:
@@ -139,7 +141,9 @@ def build(dataset: NormalizedDataset) -> GraphResult:
     _add_assume_edges(dataset, principal_uids, add_edge)
     self_attach_via = _add_escalation_edges(dataset, add_edge)
 
-    granted_by_principal = {p.principal_uid: _principal_granted_actions(dataset, p) for p in dataset.principals}
+    granted_by_principal = {
+        p.principal_uid: _principal_granted_actions(dataset, p) for p in dataset.principals
+    }
     direct_admin_nodes = {
         _node("principal", uid) for uid, actions in granted_by_principal.items() if "*" in actions
     }
@@ -151,7 +155,13 @@ def build(dataset: NormalizedDataset) -> GraphResult:
     escalations: dict[str, list[EscalationPath]] = {}
     for p in dataset.principals:
         _score_principal(
-            g, p, direct_admin_nodes, admin_nodes, self_escalating, granted_by_principal, escalations
+            g,
+            p,
+            direct_admin_nodes,
+            admin_nodes,
+            self_escalating,
+            granted_by_principal,
+            escalations,
         )
 
     return GraphResult(edges=edges, escalations=escalations)
@@ -217,16 +227,18 @@ def _add_assume_edges(dataset: NormalizedDataset, principal_uids: set[str], add_
         if not isinstance(trust, dict):
             continue
         for st in pol.statements(trust):
-            if not pol.is_allow(st):
-                continue
-            actions = {a.lower() for a in pol.actions(st)}
-            if "sts:assumerole" not in actions and "*" not in actions:
+            if not pol.is_assume_role_statement(st):
                 continue
             for arn in _trust_principal_arns(st.get("Principal")):
                 if arn in principal_uids and arn != p.principal_uid:
                     add_edge(
                         GraphEdge(
-                            "principal", arn, "principal", p.principal_uid, "CAN_ASSUME", is_sensitive=True
+                            "principal",
+                            arn,
+                            "principal",
+                            p.principal_uid,
+                            "CAN_ASSUME",
+                            is_sensitive=True,
                         )
                     )
 
@@ -258,8 +270,12 @@ def _add_escalation_edges(dataset: NormalizedDataset, add_edge: Any) -> dict[str
                 if role.principal_uid != p.principal_uid:
                     add_edge(
                         GraphEdge(
-                            "principal", p.principal_uid, "principal", role.principal_uid,
-                            "CAN_ESCALATE", is_sensitive=True,
+                            "principal",
+                            p.principal_uid,
+                            "principal",
+                            role.principal_uid,
+                            "CAN_ESCALATE",
+                            is_sensitive=True,
                             metadata={"via": "passrole_compute_launch"},
                         )
                     )
@@ -270,8 +286,13 @@ def _add_escalation_edges(dataset: NormalizedDataset, add_edge: Any) -> dict[str
                 if other.principal_uid != p.principal_uid:
                     add_edge(
                         GraphEdge(
-                            "principal", p.principal_uid, "principal", other.principal_uid,
-                            "CAN_ESCALATE", is_sensitive=True, metadata={"via": via},
+                            "principal",
+                            p.principal_uid,
+                            "principal",
+                            other.principal_uid,
+                            "CAN_ESCALATE",
+                            is_sensitive=True,
+                            metadata={"via": via},
                         )
                     )
 
@@ -280,8 +301,13 @@ def _add_escalation_edges(dataset: NormalizedDataset, add_edge: Any) -> dict[str
             self_attach_via[p.principal_uid] = via
             add_edge(
                 GraphEdge(
-                    "principal", p.principal_uid, "principal", p.principal_uid,
-                    "CAN_ESCALATE", is_sensitive=True, metadata={"via": via},
+                    "principal",
+                    p.principal_uid,
+                    "principal",
+                    p.principal_uid,
+                    "CAN_ESCALATE",
+                    is_sensitive=True,
+                    metadata={"via": via},
                 )
             )
 

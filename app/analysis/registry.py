@@ -32,9 +32,11 @@ class CheckMeta:
 class ActivityIndex:
     """Actions actually observed per principal, derived from log events.
 
-    ``used_actions`` holds normalized IAM ``service:Action`` strings (sign-in
-    events and denied attempts excluded), so it's directly comparable to a
-    principal's *granted* actions for the least-privilege diff (§6.3).
+    ``used_actions`` holds normalized IAM ``service:Action`` strings for events
+    with a confirmed ``outcome == "success"`` only (sign-in events, denied/
+    failed attempts, and unknown/missing outcomes are all excluded), so it's
+    directly comparable to a principal's *granted* actions for the
+    least-privilege diff (§6.3).
     ``event_counts`` holds the total number of observed events per principal —
     including logins and denied attempts, i.e. any evidence the principal was
     actually captured in the logs — and drives both the "is this identity

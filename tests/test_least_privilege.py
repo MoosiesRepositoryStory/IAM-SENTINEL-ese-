@@ -179,7 +179,12 @@ def test_non_sensitive_grants_are_not_counted() -> None:
 def test_activity_index_normalizes_actions_and_counts_all_events() -> None:
     ds = NormalizedDataset(
         log_events=[
-            LogEventRecord(principal_uid="u", event_name="GetObject", event_source="s3.amazonaws.com"),
+            LogEventRecord(
+                principal_uid="u",
+                event_name="GetObject",
+                event_source="s3.amazonaws.com",
+                outcome="success",
+            ),
             LogEventRecord(
                 principal_uid="u", event_name="ConsoleLogin", event_source="signin.amazonaws.com"
             ),
@@ -197,6 +202,40 @@ def test_activity_index_normalizes_actions_and_counts_all_events() -> None:
     # ...but all three events count toward observed activity.
     assert idx.events_for("u") == 3
     assert idx.is_active("u") is True
+
+
+def test_failed_action_does_not_count_as_used() -> None:
+    """A ``failure`` outcome (as distinct from ``denied``) must not count as
+    used — only a confirmed ``success`` proves the grant was actually
+    exercised (§ engine.build_activity_index allowlist)."""
+    ds = NormalizedDataset(
+        log_events=[
+            LogEventRecord(
+                principal_uid="u",
+                event_name="GetObject",
+                event_source="s3.amazonaws.com",
+                outcome="failure",
+            )
+        ]
+    )
+    idx = build_activity_index(ds)
+    assert idx.used_by("u") == set()
+    assert idx.events_for("u") == 1  # still counts as "we saw them"
+
+
+def test_unknown_outcome_does_not_count_as_used() -> None:
+    """An event with no ``outcome`` at all (unparseable/unqualifiable source)
+    is conservatively treated as unproven, not as a successful use."""
+    ds = NormalizedDataset(
+        log_events=[
+            LogEventRecord(
+                principal_uid="u", event_name="GetObject", event_source="s3.amazonaws.com"
+            )
+        ]
+    )
+    idx = build_activity_index(ds)
+    assert idx.used_by("u") == set()
+    assert idx.events_for("u") == 1
 
 
 def test_login_only_principal_is_active_but_has_no_used_actions() -> None:

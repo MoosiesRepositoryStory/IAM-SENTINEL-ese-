@@ -37,8 +37,10 @@ def build_activity_index(dataset: NormalizedDataset) -> ActivityIndex:
 
     - ``used_actions`` — the set of IAM ``service:Action`` strings a principal
       *successfully* exercised, normalized from CloudTrail ``(eventSource,
-      eventName)`` so it lines up with granted actions. Sign-in events and
-      denied attempts are excluded (a denied action wasn't actually used).
+      eventName)`` so it lines up with granted actions. Only events with a
+      confirmed ``outcome == "success"`` count; sign-in events, denied/failed
+      attempts, and anything with an unknown/missing outcome are excluded — a
+      least-privilege recommendation must not treat "we don't know" as "used."
     - ``event_counts`` — every observed event for a principal (successful,
       failed, or denied), the raw "did we see this identity at all / how much"
       signal behind the sufficiency gate and ``is_active``.
@@ -55,7 +57,7 @@ def build_activity_index(dataset: NormalizedDataset) -> ActivityIndex:
             continue
         # Any observed event (incl. failed/denied) counts as "we saw them".
         counts[ev.principal_uid] = counts.get(ev.principal_uid, 0) + 1
-        if ev.outcome == "denied":  # attempted but not successfully exercised
+        if ev.outcome != "success":  # only a confirmed success was actually exercised
             continue
         action = logparse.to_iam_action(ev.event_source, ev.event_name)
         if action is not None:  # None = a login / unqualifiable event, not an action
@@ -73,7 +75,9 @@ def run_analysis(dataset: NormalizedDataset, thresholds: Thresholds) -> Analysis
     # onto each PrincipalRecord in place *before* checks run, so risk.py's
     # impact scoring (below) sees real numbers, not the Phase-0 placeholder 0.
     graph_result = graph_module.build(dataset)
-    ctx = CheckContext(dataset=dataset, thresholds=thresholds, activity=activity, graph=graph_result)
+    ctx = CheckContext(
+        dataset=dataset, thresholds=thresholds, activity=activity, graph=graph_result
+    )
     principals = dataset.principal_by_uid()
 
     findings: list[Finding] = []
@@ -98,7 +102,9 @@ def run_analysis(dataset: NormalizedDataset, thresholds: Thresholds) -> Analysis
         [
             risk.PostureFactor(
                 severity=f.severity.value,
-                blast_radius=(p.blast_radius_score if (p := principals.get(f.principal_uid or "")) else 0),
+                blast_radius=(
+                    p.blast_radius_score if (p := principals.get(f.principal_uid or "")) else 0
+                ),
                 is_escalation=bool(f.evidence.get("graph_path")),
             )
             for f in findings

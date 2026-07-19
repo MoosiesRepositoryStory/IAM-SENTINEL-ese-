@@ -125,8 +125,10 @@ class TrustWildcardPrincipalCheck:
             if not isinstance(trust, dict):
                 continue
             for st in pol.statements(trust):
+                if not pol.is_assume_role_statement(st):
+                    continue
                 principal = st.get("Principal")
-                if principal == "*" or (isinstance(principal, dict) and "*" in principal.values()):
+                if pol.principal_has_wildcard(principal):
                     yield make_finding(
                         self.meta.id,
                         title=f"Role {p.display_name} can be assumed by any principal",

@@ -59,6 +59,22 @@ def test_cloudtrail_flags_sensitive_iam() -> None:
     assert rec.outcome == "denied"
 
 
+def test_cloudtrail_record_with_no_outcome_field_defaults_to_success() -> None:
+    """An ordinary CloudTrail API-call record (no ``errorCode``, no
+    ``responseElements``) has no explicit outcome — that must resolve to
+    ``"success"``, not the string ``"none"``. Regression test for a fallback
+    bug: ``_normalize_outcome(str(obj.get("outcome")))`` stringified a
+    missing key's ``None`` into the literal text ``"None"``, which normalized
+    to the unrecognized-but-truthy string ``"none"`` and silently defeated the
+    intended ``or "success"`` default."""
+    rec = parse_line(
+        '{"eventName":"GetObject","eventSource":"s3.amazonaws.com",'
+        '"userIdentity":{"userName":"alice"}}'
+    )
+    assert rec is not None
+    assert rec.outcome == "success"
+
+
 @pytest.mark.parametrize(
     "line",
     ["", "   ", "# a comment", "not a real log line at all", "{ broken json", "\x00\x01garbage"],

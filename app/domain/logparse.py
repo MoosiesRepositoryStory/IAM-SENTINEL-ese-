@@ -147,7 +147,10 @@ def _from_cloudtrail(obj: dict[str, Any]) -> LogEventRecord:
         code = str(obj["errorCode"])
         outcome = "denied" if "AccessDenied" in code or "Forbidden" in code else "failure"
     if outcome is None:
-        outcome = _normalize_outcome(str(obj.get("outcome"))) or "success"
+        raw_outcome = obj.get("outcome")
+        outcome = (
+            _normalize_outcome(str(raw_outcome) if raw_outcome is not None else None) or "success"
+        )
 
     return _finalize(
         ts=ts,

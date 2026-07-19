@@ -117,6 +117,53 @@ def test_tight_policy_produces_no_wildcard_finding() -> None:
     assert _run_check("policy.wildcard_action", ds) == []
 
 
+# --- trust wildcard principal ------------------------------------------------
+def _role_with_trust(uid: str, trust: dict):
+    return principal(uid, kind="role", raw={"AssumeRolePolicyDocument": trust})
+
+
+def test_trust_wildcard_principal_fires_for_scalar_star() -> None:
+    trust = {"Statement": [{"Effect": "Allow", "Principal": "*", "Action": "sts:AssumeRole"}]}
+    ds = NormalizedDataset(principals=[_role_with_trust("role/Public", trust)])
+    findings = _run_check("iam.role.trust_wildcard_principal", ds)
+    assert len(findings) == 1
+    assert findings[0].severity.value == "CRITICAL"
+
+
+def test_trust_wildcard_principal_ignores_deny_statement() -> None:
+    """A Deny statement naming Principal '*' grants nothing — it must not be
+    reported as an assumable-by-anyone trust (false positive)."""
+    trust = {"Statement": [{"Effect": "Deny", "Principal": "*", "Action": "sts:AssumeRole"}]}
+    ds = NormalizedDataset(principals=[_role_with_trust("role/Locked", trust)])
+    assert _run_check("iam.role.trust_wildcard_principal", ds) == []
+
+
+def test_trust_wildcard_principal_ignores_unrelated_action() -> None:
+    """Principal '*' on a statement that isn't an sts:AssumeRole grant isn't a
+    public-assume trust at all."""
+    trust = {"Statement": [{"Effect": "Allow", "Principal": "*", "Action": "sts:TagSession"}]}
+    ds = NormalizedDataset(principals=[_role_with_trust("role/Unrelated", trust)])
+    assert _run_check("iam.role.trust_wildcard_principal", ds) == []
+
+
+def test_trust_wildcard_principal_catches_list_valued_wildcard() -> None:
+    """``{"AWS": ["*", "arn:...:root"]}`` grants anyone via a list-valued
+    Principal — a real AWS shape a bare scalar '*' check misses entirely
+    (false negative)."""
+    trust = {
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Principal": {"AWS": ["*", "arn:aws:iam::210987654321:root"]},
+                "Action": "sts:AssumeRole",
+            }
+        ]
+    }
+    ds = NormalizedDataset(principals=[_role_with_trust("role/ListWildcard", trust)])
+    findings = _run_check("iam.role.trust_wildcard_principal", ds)
+    assert len(findings) == 1
+
+
 # --- log: repeated login failures -------------------------------------------
 def test_repeated_login_failures_threshold(dataset) -> None:
     from app.domain.records import LogEventRecord

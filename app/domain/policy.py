@@ -55,6 +55,40 @@ def is_allow(statement: dict[str, Any]) -> bool:
     return str(statement.get("Effect", "Allow")).lower() == "allow"
 
 
+def is_assume_role_statement(statement: dict[str, Any]) -> bool:
+    """Whether a trust-policy statement is an *Allow* grant of
+    ``sts:AssumeRole`` (exact or ``*``-covered, case-insensitive).
+
+    The single gate every trust-policy consumer (the permission graph's
+    ``CAN_ASSUME`` edges, the trust-wildcard-principal check) must apply
+    before inspecting ``Principal`` — a ``Deny`` statement or a statement
+    granting an unrelated action must never be read as an assumable trust
+    grant, regardless of what its ``Principal`` field says.
+    """
+    if not is_allow(statement):
+        return False
+    acts = {a.lower() for a in actions(statement)}
+    return "sts:assumerole" in acts or "*" in acts
+
+
+def principal_has_wildcard(principal: Any) -> bool:
+    """Whether a trust statement's ``Principal`` field grants ``*`` (anyone),
+    as the bare scalar ``"*"`` or inside a list-valued field, e.g.
+    ``{"AWS": ["*", "arn:aws:iam::111111111111:root"]}`` — a real AWS shape
+    that a plain ``"*" in principal.values()`` scan misses entirely, since a
+    dict's value there is the *list*, not the string ``"*"`` itself.
+    """
+    if principal == "*":
+        return True
+    if isinstance(principal, dict):
+        for value in principal.values():
+            if value == "*":
+                return True
+            if isinstance(value, list) and "*" in value:
+                return True
+    return False
+
+
 def has_wildcard_action(document: dict[str, Any] | None) -> bool:
     """True if any Allow statement grants ``*`` (or ``service:*``-only ``*``)."""
     for st in statements(document):
