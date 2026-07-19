@@ -189,8 +189,19 @@ def query_findings(
     filters: FindingFilters | None = None,
     page: int = 1,
     page_size: int = PAGE_SIZE,
+    offset: int | None = None,
 ) -> FindingsPage:
-    """Return one page of findings for the account's latest completed run."""
+    """Return one page of findings for the account's latest completed run.
+
+    ``offset``, when given, overrides the ``(page - 1) * page_size``
+    computation with an exact row offset — the API read surface (Phase 4
+    Slice 4a) uses arbitrary ``?limit=&offset=`` pagination rather than the
+    HTML app's fixed-page-size UI, and this is the same underlying query
+    either way. ``page`` in the returned :class:`FindingsPage` becomes
+    advisory in that case (``offset // page_size + 1``) — callers using raw
+    offset pagination should read ``total``/``rows`` directly rather than
+    ``.pages``.
+    """
     sort = sort or [SortKey(k, d) for k, d in _DEFAULT_SORT]
     filters = filters or FindingFilters()
     page = max(1, page)
@@ -220,10 +231,14 @@ def query_findings(
         order_cols.append(col.desc() if s.desc else col.asc())
     order_cols.append(Finding.id.asc())  # stable tiebreak
 
+    effective_offset = offset if offset is not None else (page - 1) * page_size
+    if offset is not None:
+        page = offset // page_size + 1 if page_size else 1
+
     rows = list(
         session.scalars(
             filtered.order_by(*order_cols)
-            .offset((page - 1) * page_size)
+            .offset(effective_offset)
             .limit(page_size)
         )
     )

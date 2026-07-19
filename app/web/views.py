@@ -12,12 +12,15 @@ from typing import cast
 
 from flask import Blueprint, Response, abort, redirect, render_template, request, url_for
 from flask_login import current_user
-from sqlalchemy import select
 
 from app.db import session_scope
 from app.domain.records import Thresholds
-from app.models import Account, Run, RunSummary
+from app.models import Account, RunSummary
 from app.scheduler import fire_schedule, remove_schedule_job, sync_schedule
+from app.services.account_service import current_account as _current_account
+from app.services.account_service import (
+    current_completed_run_id as _current_completed_run_id,
+)
 from app.services.account_service import list_accounts
 from app.services.bulk_service import bulk_assign, bulk_exception, bulk_transition
 from app.services.checks_catalog import list_checks
@@ -108,22 +111,6 @@ COLUMNS: list[dict[str, str | bool]] = [
     {"key": "check", "label": "Check ID", "sortable": True, "default": False},
 ]
 _DEFAULT_COLS: list[str] = [str(c["key"]) for c in COLUMNS if c["default"]]
-
-
-def _current_completed_run_id(session) -> int | None:  # noqa: ANN001
-    return session.scalar(select(Run.id).where(Run.status == "completed").order_by(Run.id.desc()))
-
-
-def _current_account(session) -> Account | None:  # noqa: ANN001
-    """No account switcher exists yet (Slice 2) — "current" means the account
-    behind the most recently *completed* run (whatever was just connected or
-    re-scanned), falling back to the newest-created account if nothing has
-    been scanned yet."""
-    run_id = _current_completed_run_id(session)
-    if run_id is not None:
-        run = session.get(Run, run_id)
-        return session.get(Account, run.account_id)
-    return session.scalar(select(Account).order_by(Account.id.desc()))
 
 
 def _selected_columns() -> list[str]:

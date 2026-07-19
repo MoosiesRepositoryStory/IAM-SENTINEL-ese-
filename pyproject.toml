@@ -56,6 +56,13 @@ dev = [
     "Flask-WTF>=1.2",
     "argon2-cffi>=23.1",
     "email-validator>=2.0",
+    # OpenAPI /api/v1 (Phase 4 Slice 4a, §10.4): flask-smorest blueprint +
+    # marshmallow schemas + PyJWT bearer tokens. Declared here (not just in
+    # `api`) for the same "dev/CI actually exercises this" reasoning as the
+    # rest of this list.
+    "flask-smorest>=0.44",
+    "marshmallow>=3.21",
+    "PyJWT>=2.8",
 ]
 
 [project.scripts]
@@ -98,6 +105,14 @@ addopts = "-q --strict-markers"
 testpaths = ["tests"]
 markers = [
     "integration: slower tests that touch the DB / adapters (deselect with -m 'not integration')",
+]
+filterwarnings = [
+    # The dev/test SECRET_KEY (config.py's "dev-insecure-change-me" default)
+    # is deliberately short — that's the whole point of its name. PyJWT
+    # correctly warns real deployments to use a longer key; a real deployment
+    # sets SECRET_KEY via env var, at which point this warning stops firing
+    # on its own. Silenced only in tests so it doesn't drown out real signal.
+    "ignore::jwt.warnings.InsecureKeyLengthWarning",
 ]
 
 [tool.coverage.run]

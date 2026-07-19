@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import Account, Run, Schedule
@@ -25,10 +25,40 @@ class AccountRow:
     schedule: Schedule | None
 
 
-def list_accounts(session: Session) -> list[AccountRow]:
+def current_completed_run_id(session: Session) -> int | None:
+    """The most recently completed run across every account — "latest scan,
+    period" (§8.11's implicit account context). Shared by the HTML app
+    (``app.web.views``) and the /api/v1 read surface (Phase 4 Slice 4a) so
+    both mean the same thing by "the current run" without duplicating the
+    query."""
+    return session.scalar(select(Run.id).where(Run.status == "completed").order_by(Run.id.desc()))
+
+
+def current_account(session: Session) -> Account | None:
+    """No account switcher exists yet (Phase 2 Slice 2) — "current" means the
+    account behind the most recently *completed* run (whatever was just
+    connected or re-scanned), falling back to the newest-created account if
+    nothing has been scanned yet. Shared by the HTML app and the API read
+    surface for the same reason as :func:`current_completed_run_id`."""
+    run_id = current_completed_run_id(session)
+    if run_id is not None:
+        run = session.get(Run, run_id)
+        return session.get(Account, run.account_id) if run is not None else None
+    return session.scalar(select(Account).order_by(Account.id.desc()))
+
+
+def list_accounts(
+    session: Session, *, limit: int | None = None, offset: int = 0
+) -> list[AccountRow]:
     """All accounts, newest first, each paired with its latest run and its
-    recurring-scan schedule, if any (§11.4's accounts-list "schedule badge")."""
-    accounts = session.scalars(select(Account).order_by(Account.id.desc())).all()
+    recurring-scan schedule, if any (§11.4's accounts-list "schedule badge").
+    ``limit``/``offset`` (added for the API read surface's pagination, Phase
+    4 Slice 4a) default to "everything" — the HTML app's own caller never
+    sets them, so its behavior is unchanged."""
+    stmt = select(Account).order_by(Account.id.desc()).offset(offset)
+    if limit is not None:
+        stmt = stmt.limit(limit)
+    accounts = session.scalars(stmt).all()
     rows: list[AccountRow] = []
     for account in accounts:
         latest = session.scalar(
@@ -47,6 +77,12 @@ def list_accounts(session: Session) -> list[AccountRow]:
             )
         )
     return rows
+
+
+def count_accounts(session: Session) -> int:
+    """Total accounts — the ``list_accounts`` companion for ``X-Total-Count``
+    (Phase 4 Slice 4a)."""
+    return session.scalar(select(func.count()).select_from(Account)) or 0
 
 
 def create_account(

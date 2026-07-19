@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Account, Run
+from app.models import Account, Finding, Run
 
 
 @dataclass
@@ -31,15 +31,48 @@ def _to_row(run: Run, account_name: str) -> RunRow:
     )
 
 
-def list_runs(session: Session, *, limit: int = 50) -> list[RunRow]:
-    """All runs across all accounts, newest first."""
+def list_runs(session: Session, *, limit: int = 50, offset: int = 0) -> list[RunRow]:
+    """All runs across all accounts, newest first. ``offset`` (added for the
+    API read surface's ``?limit=&offset=`` pagination, Phase 4 Slice 4a) is
+    unused by the HTML app's own caller, which never sets it, so behavior
+    there is unchanged."""
     pairs = session.execute(
         select(Run, Account.name)
         .join(Account, Account.id == Run.account_id)
         .order_by(Run.id.desc())
+        .offset(offset)
         .limit(limit)
     ).all()
     return [_to_row(run, account_name) for run, account_name in pairs]
+
+
+def count_runs(session: Session) -> int:
+    """Total runs across all accounts — the ``list_runs`` companion for
+    ``X-Total-Count`` (Phase 4 Slice 4a)."""
+    return session.scalar(select(func.count()).select_from(Run)) or 0
+
+
+def list_run_findings(
+    session: Session, run_id: int, *, limit: int = 50, offset: int = 0
+) -> tuple[list[Finding], int]:
+    """Every ``Finding`` snapshot from one specific run (as opposed to
+    ``finding_query.query_findings``, which always means "the account's
+    latest completed run") — the API's ``/runs/{id}/findings`` (Phase 4
+    Slice 4a). Riskiest first, same order as the export path
+    (``export_service._run_payload``)."""
+    total = session.scalar(
+        select(func.count()).select_from(Finding).where(Finding.run_id == run_id)
+    ) or 0
+    rows = list(
+        session.scalars(
+            select(Finding)
+            .where(Finding.run_id == run_id)
+            .order_by(Finding.risk_score.desc(), Finding.id.asc())
+            .offset(offset)
+            .limit(limit)
+        )
+    )
+    return rows, total
 
 
 def get_run_row(session: Session, run_id: int) -> RunRow | None:

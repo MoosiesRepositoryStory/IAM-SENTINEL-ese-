@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import Finding, PermissionEdge, Policy, Principal
@@ -37,13 +37,22 @@ class PrincipalBlastRow:
     reachable_sensitive: int
 
 
-def list_principals_by_blast(session: Session, run_id: int) -> list[PrincipalBlastRow]:
-    """All principals for a run, riskiest first — the Blast Radius overview page."""
-    rows = session.scalars(
+def list_principals_by_blast(
+    session: Session, run_id: int, *, limit: int | None = None, offset: int = 0
+) -> list[PrincipalBlastRow]:
+    """All principals for a run, riskiest first — the Blast Radius overview
+    page. ``limit``/``offset`` (added for the API read surface's pagination,
+    Phase 4 Slice 4a) default to "everything" — the HTML app's own caller
+    never sets them, so its behavior is unchanged."""
+    stmt = (
         select(Principal)
         .where(Principal.run_id == run_id)
         .order_by(Principal.blast_radius_score.desc().nulls_last(), Principal.principal_uid)
-    ).all()
+        .offset(offset)
+    )
+    if limit is not None:
+        stmt = stmt.limit(limit)
+    rows = session.scalars(stmt).all()
     return [
         PrincipalBlastRow(
             principal_uid=p.principal_uid,
@@ -55,6 +64,17 @@ def list_principals_by_blast(session: Session, run_id: int) -> list[PrincipalBla
         )
         for p in rows
     ]
+
+
+def count_principals(session: Session, run_id: int) -> int:
+    """Total principals for a run — the ``list_principals_by_blast`` companion
+    for ``X-Total-Count`` (Phase 4 Slice 4a)."""
+    return (
+        session.scalar(
+            select(func.count()).select_from(Principal).where(Principal.run_id == run_id)
+        )
+        or 0
+    )
 
 
 def _node_id(node_type: str, uid: str) -> str:

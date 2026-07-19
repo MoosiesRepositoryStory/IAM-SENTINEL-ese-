@@ -70,6 +70,14 @@ def create_app(*, start_background_jobs: bool = True) -> Flask:
 
     app.register_blueprint(bp)
 
+    # /api/v1 (Phase 4 Slice 4a, §10.4): a separate flask-smorest blueprint
+    # tree on the SAME app, with its own JWT bearer-token auth — deliberately
+    # independent of the HTML app's session cookie above (see
+    # app.web.auth_views's docstring).
+    from app.api import init_api
+
+    init_api(app)
+
     with session_scope() as session:
         seed_demo_users(session)
 
