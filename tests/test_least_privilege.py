@@ -143,6 +143,115 @@ def test_boundary_values_are_sufficient() -> None:
     assert rec.confident
 
 
+# --- unsupported policy forms (Deny/Condition/NotAction/NotResource) --------
+
+
+def _doc_with_statement(statement: dict) -> PolicyRecord:
+    return PolicyRecord(
+        policy_uid="P",
+        name="P",
+        document={
+            "Statement": [
+                {"Effect": "Allow", "Action": ["s3:GetObject"], "Resource": "*"},
+                statement,
+            ]
+        },
+    )
+
+
+def test_deny_statement_refuses_a_suggested_policy() -> None:
+    """This engine never evaluates Deny anywhere (§ domain.policy docstring),
+    so a Deny-restricted action could silently read as grantable — refuse
+    rather than generate a policy that might broaden effective access."""
+    policy = _doc_with_statement({"Effect": "Deny", "Action": ["s3:DeleteObject"], "Resource": "*"})
+    rec = lp.recommend(
+        principal_uid="u",
+        granted_actions={"s3:GetObject"},
+        policies=[policy],
+        used_actions={"s3:GetObject"},
+        event_count=10,
+        window_days=30,
+    )
+    assert not rec.confident
+    assert rec.suggested_policy is None
+    assert rec.suggested_policy_json is None
+    assert "Deny" in rec.insufficient_reason
+
+
+def test_condition_key_refuses_a_suggested_policy() -> None:
+    policy = _doc_with_statement(
+        {
+            "Effect": "Allow",
+            "Action": ["s3:PutObject"],
+            "Resource": "*",
+            "Condition": {"Bool": {"aws:MultiFactorAuthPresent": "true"}},
+        }
+    )
+    rec = lp.recommend(
+        principal_uid="u",
+        granted_actions={"s3:GetObject", "s3:PutObject"},
+        policies=[policy],
+        used_actions={"s3:GetObject"},
+        event_count=10,
+        window_days=30,
+    )
+    assert not rec.confident
+    assert rec.suggested_policy is None
+    assert "Condition" in rec.insufficient_reason
+
+
+def test_not_action_refuses_a_suggested_policy() -> None:
+    policy = _doc_with_statement(
+        {"Effect": "Allow", "NotAction": ["cloudtrail:StopLogging"], "Resource": "*"}
+    )
+    rec = lp.recommend(
+        principal_uid="u",
+        granted_actions={"s3:GetObject", "*"},
+        policies=[policy],
+        used_actions={"s3:GetObject"},
+        event_count=10,
+        window_days=30,
+    )
+    assert not rec.confident
+    assert rec.suggested_policy is None
+    assert "NotAction" in rec.insufficient_reason
+
+
+def test_not_resource_refuses_a_suggested_policy() -> None:
+    policy = _doc_with_statement(
+        {"Effect": "Allow", "Action": ["s3:PutObject"], "NotResource": "arn:aws:s3:::secret"}
+    )
+    rec = lp.recommend(
+        principal_uid="u",
+        granted_actions={"s3:GetObject", "s3:PutObject"},
+        policies=[policy],
+        used_actions={"s3:GetObject"},
+        event_count=10,
+        window_days=30,
+    )
+    assert not rec.confident
+    assert rec.suggested_policy is None
+    assert "NotResource" in rec.insufficient_reason
+
+
+def test_sparse_data_reason_takes_precedence_over_unsupported_forms() -> None:
+    """When both gates would fire, the sparse-data message wins — it's
+    checked first and is the more actionable of the two (broaden logs vs.
+    review the policy by hand)."""
+    policy = _doc_with_statement({"Effect": "Deny", "Action": ["s3:DeleteObject"], "Resource": "*"})
+    rec = lp.recommend(
+        principal_uid="u",
+        granted_actions={"s3:GetObject"},
+        policies=[policy],
+        used_actions=set(),
+        event_count=0,
+        window_days=5,
+    )
+    assert not rec.confident
+    assert "5 day" in rec.insufficient_reason
+    assert "Deny" not in rec.insufficient_reason
+
+
 # --- ratio threshold ---------------------------------------------------------
 
 

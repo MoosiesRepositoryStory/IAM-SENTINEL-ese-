@@ -11,6 +11,11 @@
 </div>
 <p class="page-sub mono">{{ graph.focus }}</p>
 
+<div class="model-disclaimer">
+  <span class="ico">ⓘ</span>
+  <span>Structural/heuristic model — edges are inferred from Allow-statement grants and trust-policy Principal fields only. This does not evaluate Deny statements, Condition keys, resource-policy intersection, permission boundaries, or SCPs.</span>
+</div>
+
 {% if graph.escalation_path %}
 <div class="escalation-banner">
   <span class="ico">⚠</span>

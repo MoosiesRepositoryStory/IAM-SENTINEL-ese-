@@ -105,6 +105,33 @@ def _action_resources(policies: list[PolicyRecord]) -> dict[str, set[str]]:
     return out
 
 
+def _has_unsupported_forms(policies: list[PolicyRecord]) -> bool:
+    """Whether any of a principal's attached policies uses a statement form
+    this tool's Allow-only structural model can't safely reduce: an explicit
+    ``Deny`` (never evaluated anywhere in this engine — see
+    ``domain.policy``'s module docstring — so a Deny-restricted action can
+    read as "granted" here), a ``Condition`` key (entirely unmodeled; a
+    conditionally-scoped grant would become unconditional in a generated
+    policy), or ``NotAction``/``NotResource`` (their exclusion semantics are
+    already lost by the time actions/resources reach this module).
+
+    A blanket per-principal check, not a per-statement one: refusing more
+    broadly than strictly necessary is the safe failure mode for a tool whose
+    output is meant to be a real access-narrowing action.
+    """
+    for p in policies:
+        for st in pol.statements(p.document):
+            if not pol.is_allow(st):
+                return True
+            if "Condition" in st:
+                return True
+            if pol.not_actions(st):
+                return True
+            if "NotResource" in st:
+                return True
+    return False
+
+
 def _resources_for(action: str, action_resources: dict[str, set[str]]) -> list[str]:
     """Resources to scope ``action`` to in the suggested policy: an exact
     statement's resources if present, else the union from any wildcard
@@ -155,6 +182,7 @@ def recommend(
     kept = {u for u in used_actions if pol.grants_action(granted_actions, u)}
 
     reason: str | None = None
+    unsupported_forms = False
     if window_days < MIN_WINDOW_DAYS:
         reason = (
             f"insufficient activity history: only {window_days} day(s) of logs "
@@ -165,11 +193,20 @@ def recommend(
             f"insufficient activity for this principal: only {event_count} event(s) "
             f"observed (need >= {MIN_PRINCIPAL_EVENTS})"
         )
-    if reason is not None:
-        summary = (
-            f"Cannot generate a confident least-privilege policy — {reason}. "
-            "Broaden log coverage before removing grants."
+    elif _has_unsupported_forms(policies):
+        unsupported_forms = True
+        reason = (
+            "the source policy uses Deny, Condition, NotAction, or NotResource, "
+            "which this tool's structural model does not evaluate"
         )
+    if reason is not None:
+        tail = (
+            "Review the policy manually — a generated policy could silently "
+            "broaden effective access by dropping the unsupported form."
+            if unsupported_forms
+            else "Broaden log coverage before removing grants."
+        )
+        summary = f"Cannot generate a confident least-privilege policy — {reason}. {tail}"
         suggested: dict | None = None
     elif not kept:
         summary = (

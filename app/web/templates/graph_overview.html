@@ -9,6 +9,11 @@
 </div>
 <p class="page-sub">Every principal's reachable-permission footprint (§6.2) — highest blast radius first. Open a principal to see its permission graph.</p>
 
+<div class="model-disclaimer">
+  <span class="ico">ⓘ</span>
+  <span>Structural/heuristic model — reachability is inferred from Allow-statement grants only. This does not evaluate Deny statements, Condition keys, resource-policy intersection, permission boundaries, or SCPs.</span>
+</div>
+
 {% if rows %}
 <div class="table-wrap">
   <div class="tbl-scroll">

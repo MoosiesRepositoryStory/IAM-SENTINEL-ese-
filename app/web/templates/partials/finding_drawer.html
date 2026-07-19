@@ -172,6 +172,10 @@
          (§6.3). Contained to checks that set it; other checks are unaffected. #}
       {% set confidence = f.evidence.get('confidence') %}
       {% if confidence %}
+      <div class="model-disclaimer">
+        <span class="ico">ⓘ</span>
+        <span>Structural/heuristic model — this recommendation is inferred from Allow-statement grants and observed CloudTrail activity only. It does not evaluate Deny statements, Condition keys, resource-policy intersection, permission boundaries, or SCPs.</span>
+      </div>
       <div class="lp-confidence lp-{{ confidence }}">
         {% if confidence == 'confident' %}
           <span class="lp-ico">✓</span>

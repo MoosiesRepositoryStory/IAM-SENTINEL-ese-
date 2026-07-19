@@ -815,6 +815,13 @@ tr.run-highlight:hover { background: var(--accent-soft); }
 .escalation-banner .ico { color: var(--sev-critical); font-size: 15px; }
 .path-arrow { color: var(--sev-critical); }
 
+.model-disclaimer {
+  display: flex; align-items: flex-start; gap: 8px; margin-bottom: 14px; padding: 8px 12px;
+  border-radius: var(--radius); background: var(--bg-elev); border: 1px solid var(--border);
+  color: var(--text-muted); font-size: 12px; line-height: 1.5;
+}
+.model-disclaimer .ico { flex: none; }
+
 .graph-layout { display: flex; gap: 14px; align-items: stretch; }
 .graph-canvas {
   flex: 1 1 auto; min-width: 0; height: 560px;
