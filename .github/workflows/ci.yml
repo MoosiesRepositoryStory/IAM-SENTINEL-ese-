@@ -32,7 +32,7 @@ jobs:
         run: mypy app/
 
       - name: Test
-        run: pytest -q --cov=app --cov-report=term-missing --cov-fail-under=80
+        run: pytest -q --cov=app --cov-report=term-missing --cov-fail-under=88
 
       - name: Verify migrations apply
         run: alembic upgrade head

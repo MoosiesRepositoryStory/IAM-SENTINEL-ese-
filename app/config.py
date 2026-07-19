@@ -17,6 +17,7 @@ class Settings:
     reports_dir: Path
     secret_key: str
     sync_jobs: bool
+    public_base_url: str | None
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -28,6 +29,12 @@ class Settings:
             reports_dir=Path(os.getenv("REPORTS_DIR", str(data_dir / "reports"))),
             secret_key=os.getenv("SECRET_KEY", "dev-insecure-change-me"),
             sync_jobs=os.getenv("SYNC_JOBS", "true").lower() in {"1", "true", "yes"},
+            # Canonical external base URL (e.g. "https://sentinel.example.com"),
+            # e.g. for ticket-notification deep links (views.finding_create_ticket
+            # / api.findings) — see app/web/__init__.py's create_app(). Unset by
+            # default: dev/demo keeps Flask's normal behavior of deriving
+            # external URLs from the incoming request's Host header.
+            public_base_url=os.getenv("PUBLIC_BASE_URL") or None,
         )
 
     def ensure_dirs(self) -> None:

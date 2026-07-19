@@ -3,6 +3,155 @@
 All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions track the build phases.
 
+## [Unreleased] — Phase 5: DevEx & repo polish (in progress)
+
+### Fixed
+- CI workflow's push trigger targeted a `main` branch that doesn't exist in
+  this repo (only `master` does) — CI had never actually run on a push here.
+- CloudTrail activity classification: only the literal outcome `"denied"`
+  excluded an event from counting as "used" by the least-privilege engine;
+  failed/unknown-outcome events counted as used. Flipped to an allowlist
+  (only a confirmed `"success"` counts) — paired with a fix to a related bug
+  where an ordinary success-shaped CloudTrail record (no `errorCode`, no
+  `responseElements`) was resolving to the literal string `"none"` instead
+  of `"success"`, which would have made the allowlist change break every
+  genuinely-successful action.
+- `TrustWildcardPrincipalCheck` didn't require `Effect: Allow` or
+  `Action: sts:AssumeRole` before flagging a public trust principal (a
+  `Deny` statement or an unrelated action could false-positive), and missed
+  list-valued wildcards like `{"AWS": ["*", ...]}`. Consolidated onto the
+  same `is_assume_role_statement()` predicate the permission graph already
+  used correctly, closing off the class of two-divergent-implementations
+  bug that caused a real regression in Phase 3 Slice 1.
+- The least-privilege engine's generated policy dropped `Deny`, `Condition`,
+  `NotAction`, and `NotResource` forms from the source policy, which could
+  make a "least privilege" suggestion broader than the original in effect.
+  It now refuses to generate a suggested policy when any of those forms are
+  present, rather than silently emitting a simplified-and-possibly-unsafe
+  one; the blast-radius graph and least-privilege UI now disclose that this
+  is a structural/heuristic model (Allow-statement grants only — no Deny,
+  Condition, resource-policy intersection, permission boundary, or SCP
+  evaluation), not full IAM policy evaluation.
+- `pol.resources()` returned a `NotResource` statement's *excluded* resource
+  list as if it were the *granted* one — a semantic inversion that made
+  `sensitive_action_on_star` and `overly_broad_resource` miss genuinely-broad
+  grants scoped by `NotResource` instead of `Resource: "*"`.
+- Ticket-notification links sent to external integrations (webhook/Jira/Slack)
+  were built from the incoming request's `Host` header, making them
+  poisonable by a spoofed Host on an unauthenticated-adjacent path. A new
+  optional `PUBLIC_BASE_URL` setting pins the external base URL when set;
+  unset (dev/demo default) keeps deriving from the request, unchanged.
+
+### Changed
+- Moved Flask-Login, Flask-WTF, argon2-cffi, email-validator, APScheduler,
+  flask-smorest, marshmallow, and PyJWT from the `api`/`jobs` optional
+  extras (plus a parallel copy kept in `dev`) into core `dependencies` — the
+  web app (`app.web.create_app()`, the actual product surface since Phase 1)
+  imports all of them unconditionally, so a bare `pip install .` with no
+  extras was broken. `cloud` (boto3/moto) and `graph` (networkx) stay true
+  optional extras — both are `find_spec()`-guarded in code and degrade
+  gracefully when absent; `jobs` (rq/redis/fakeredis) stays declared-but-
+  unused, documenting the RQ/Redis seam described in
+  `docs/ARCHITECTURE_SPEC.md` §3.3.4 without pretending it's wired up.
+
+## [0.5.0] — Phase 4: Auth, RBAC, JSON API, ticket integrations
+
+### Added
+- **Auth** (Slice 1, §10.1): real per-user session login (Flask-Login +
+  Flask-WTF + argon2 password hashing), replacing the hardcoded seeded
+  "Demo Analyst" actor every mutating action had been attributed to since
+  Phase 1.
+- **RBAC** (Slice 2, §10.2): admin/analyst/read_only capability matrix
+  enforced two ways — route-level `@require_role` plus internal role checks
+  on the two capabilities with an admin/analyst split (connect-account,
+  accept-risk) — driving the drawer, row actions, context menu, and
+  keyboard shortcuts identically so there's one source of truth for what a
+  role can do.
+- **User admin & settings** (Slice 3, §10.3): admin user CRUD with a
+  last-active-admin lockout (can't deactivate or demote the last admin), a
+  self-service profile/password page, and a deactivation that now takes
+  effect on a user's very next request, not just their next login.
+- **JSON API** (Slices 4a/4b, §10.4): a `flask-smorest` + `marshmallow`
+  `/api/v1` blueprint tree with its own JWT bearer-token auth (independent
+  of the HTML app's session cookie), Swagger UI at `/api/docs`, and both a
+  read surface (accounts/runs/findings/principals/graph/compliance/checks)
+  and a mutating surface (every workflow action the HTML app has) behind
+  the same RBAC matrix.
+- **Ticket/webhook integrations** (Slice 5, §7.5): a `TicketAdapter`
+  protocol with a real `WebhookAdapter` (genuine outbound JSON POST) plus
+  permanent, honestly-labeled Jira/Slack stubs (no OAuth is wired up
+  anywhere in this app, so they always return a `"... (simulated)"` ref,
+  never pretending to be a real created ticket).
+
+## [0.4.0] — Phase 3: Blast-radius graph, least-privilege, compliance dashboard
+
+### Added
+- **Permission graph & blast radius** (Slice 1, §6.2): a `networkx`-based
+  graph over principals/policies/actions/resources, populating real
+  blast-radius scores and escalation paths that `risk.py`'s impact scoring
+  had only ever read as a placeholder `0` before this.
+- **Blast-radius graph view** (Slice 2): a vendored-Cytoscape UI over the
+  permission graph, per-principal and account-wide, highlighting the
+  concrete escalation path (e.g. `intern -> iam:CreateAccessKey -> bob`)
+  when one exists.
+- **Least-privilege recommendation engine** (Slice 3, §6.3): diffs a
+  principal's granted vs. actually-used (from CloudTrail) actions and
+  suggests a reduced policy, gated on a minimum observation window/event
+  count so it never asserts a recommendation off sparse data.
+- **Compliance page & checks catalog** (Slice 4, §6.5): a per-framework
+  (CIS AWS 1.4 / SOC 2 / NIST 800-53) pass/fail checklist and a full
+  registry browser for all 20 checks.
+- **Composite risk / posture retune & dashboard** (Slice 5, §6.4): fixed a
+  long-standing score-saturation bug (every scanned account scored 0/F
+  regardless of actual severity) by reworking the posture formula around a
+  diminishing-returns, weighted risk load instead of a raw score sum; added
+  the account dashboard (posture gauge, severity tiles, trend, riskiest
+  principals).
+
+## [0.3.0] — Phase 2: Simulated cloud ingestion, scheduling, diff
+
+### Added
+- **Moto-simulated AWS org** (Slice 1, §5.2): a deterministic, seeded "Acme
+  Corp" org (10 users, 6 roles, 5 managed policies with a deliberate
+  spread of misconfigurations and deliberately-clean principals) ingested
+  through genuine `boto3` IAM calls against a `moto` mock — the marquee
+  demo account; file upload remains the alternate ingestion path.
+- **Connect wizard & Accounts page** (Slice 2, §5.3): demo / assume-role /
+  file-upload connection methods, all validated before either the account
+  or the first scan is created.
+- **Background execution & live progress** (Slice 3, §3.3.4/§8.10): an
+  in-process `ThreadingJobQueue` (see the addendum in
+  `docs/ARCHITECTURE_SPEC.md` — this superseded the doc's originally-planned
+  RQ/Redis worker topology) plus a Runs page that self-polls via htmx until
+  a scan reaches a terminal status.
+- **Run-to-run diff & deterministic seed drift** (Slice 4, §5.4/§8.9): a
+  compute-on-demand diff between any two runs (severity/risk/status/evidence
+  deltas), plus a deterministic "drift stage" the demo org advances through
+  on repeated scans so there's always something real to diff.
+- **Recurring scans & real exception-expiry job** (Slice 5, §5.5/§11.4): an
+  in-process APScheduler (also superseding the doc's RQ/Redis-adjacent
+  design) promotes the opportunistic on-read exception-expiry check from
+  Phase 1 into a real daily job.
+
+## [0.2.0] — Phase 1: Findings workflow & UX shell
+
+### Added
+- **Findings table & app shell** (Slice 1, §8.2): server-side sort/filter/
+  paginate, severity facets, dark/light theme — vendored htmx + Alpine.js,
+  no CDN dependency.
+- **Finding detail drawer, status workflow & audit trail** (Slice 2a, §7.1):
+  a state machine driving both the allowed transitions and the drawer's own
+  buttons from one source of truth, so they can't drift apart.
+- **Comments & assignment** (Slice 2b): a unified activity timeline merging
+  status history, comments, and assignment events.
+- **Suppression / accepted-risk exceptions** (Slice 2c, §7.4): time-bound
+  exceptions with auto-expiry re-surfacing (opportunistic on read; promoted
+  to a real scheduled job in Phase 2 Slice 5).
+- **Context menu, command palette & keyboard shortcuts** (Slice 3,
+  §8.3-8.6): single/bulk right-click actions, a `Cmd/Ctrl+K` palette with
+  live server-searched findings, and a full keyboard-navigation layer —
+  closing out Phase 1's workflow/UX scope in full.
+
 ## [0.1.0] — Phase 0: Foundation & backend spine
 
 ### Added
@@ -24,4 +173,9 @@ All notable changes to this project are documented here. Format follows
 - **Quality gate**: ruff (lint+format), mypy (strict on core logic), pytest with
   Hypothesis property tests; 92% coverage. GitHub Actions CI + pre-commit.
 
+[Unreleased]: #
+[0.5.0]: #
+[0.4.0]: #
+[0.3.0]: #
+[0.2.0]: #
 [0.1.0]: #

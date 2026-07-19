@@ -7,6 +7,8 @@ static assets (vendored htmx + Alpine, CSS) in ``static/``.
 
 from __future__ import annotations
 
+from urllib.parse import urlsplit
+
 from flask import Flask
 from flask_login import LoginManager
 
@@ -59,6 +61,16 @@ def create_app(*, start_background_jobs: bool = True) -> Flask:
     # safe without threading a token through every htmx form.
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     app.config["SESSION_COOKIE_HTTPONLY"] = True
+    # Canonical host, when configured (PUBLIC_BASE_URL): pins SERVER_NAME /
+    # PREFERRED_URL_SCHEME so url_for(_external=True) — used for the
+    # ticket-notification deep link sent to external integrations, see
+    # views.finding_create_ticket / api.findings — can't be poisoned by a
+    # spoofed Host header. Unset (the dev/demo default) leaves Flask's normal
+    # behavior of deriving external URLs from the incoming request's Host.
+    if settings.public_base_url:
+        parsed = urlsplit(settings.public_base_url)
+        app.config["SERVER_NAME"] = parsed.netloc
+        app.config["PREFERRED_URL_SCHEME"] = parsed.scheme or "https"
     init_engine(settings)
     login_manager.init_app(app)
 

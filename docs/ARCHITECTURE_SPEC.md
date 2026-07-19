@@ -7,6 +7,27 @@
 
 ---
 
+> **Implementation addendum (Phase 2 planning, locked with the owner):** §3.3.4,
+> §3.3.5, and §11 below describe an **RQ + Redis** worker topology as the
+> chosen production design. That was superseded before Phase 2 was built: the
+> actual implementation runs job execution and scheduling **in-process** —
+> `app/jobs.py`'s `ThreadingJobQueue` (an in-process daemon thread pool, the
+> only implementation, not a fallback) and `app/scheduler.py`'s in-process
+> APScheduler `BackgroundScheduler`. This was a deliberate choice, not an
+> unplanned shortcut: it keeps the "one command, offline" demo property this
+> doc's own §1 vision calls for, and a dedicated Redis worker buys nothing
+> when there's nothing else in the deployment that needs Redis for anything
+> else. Progress reporting is htmx polling (`hx-trigger="load, every
+> 1500ms"`), not the SSE/Redis-pub-sub design in §3.3.5 — SSE is not
+> implemented. The RQ/Redis design below is kept in place, not deleted, as
+> the originally-scoped production topology and the documented seam for a
+> real multi-worker deployment (see the `jobs` extra in `pyproject.toml`,
+> which declares `rq`/`redis`/`fakeredis` but is not imported by any code
+> path today) — read every RQ/Redis/SSE reference below as "the original
+> plan, not what's running."
+
+---
+
 ## Table of Contents
 
 1. [Executive Summary & Product Vision](#1-executive-summary--product-vision)
@@ -209,6 +230,12 @@ These are **decisions**, not menus.
 - **Tradeoff accepted:** SQLite's weaker concurrency matters once a background worker writes while the web reads. Mitigated by WAL mode (`PRAGMA journal_mode=WAL`), short transactions, and the option to flip to Postgres in compose for the "serious" demo.
 
 #### 3.3.4 Background jobs: **RQ + Redis** (not Celery, not bare threads)
+
+> **Superseded — see the addendum at the top of this document.** The
+> implementation uses an in-process `ThreadingJobQueue` (`app/jobs.py`), not
+> RQ/Redis. The reasoning below (why not Celery, why not bare threads) is
+> still the reasoning that led to the eventual in-process choice; only the
+> "so use RQ+Redis" conclusion changed.
 
 - **Decision:** Use **RQ** (Redis Queue) for job execution and **APScheduler** for recurring scans (scheduler enqueues RQ jobs). Redis also backs progress state and SSE pub/sub.
 - **Why:** RQ is dramatically simpler than Celery and perfect for "run this scan off the request thread with progress." Bare `threading` would block on process restarts, lose jobs, and can't scale or report cleanly — it would read as a shortcut. Celery is powerful but its config/broker/result-backend ceremony is overkill here. APScheduler handles cron-like recurring scans in-process.
