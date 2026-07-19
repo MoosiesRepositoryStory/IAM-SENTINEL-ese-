@@ -27,6 +27,18 @@ window.Sentinel = (function () {
     paletteSearch: '/command-palette/search',
   };
 
+  // ------------------------------------------------------------------ rbac --
+  // Mirrors app.services.rbac's read_only < analyst < admin ladder (§10.2).
+  // The server is the actual authority (every route is decorated with
+  // require_role and 403s + audits an unauthorized POST regardless of this) —
+  // this only decides which client-built controls (context menu items,
+  // keyboard shortcuts) to offer, so a role never sees a control for
+  // something it can't do. Role comes from <body data-role> (base.html),
+  // set once per page load from the real session.
+  const ROLE_RANK = { read_only: 1, analyst: 2, admin: 3 };
+  function currentRole() { return document.body.dataset.role || ''; }
+  function roleAtLeast(min) { return (ROLE_RANK[currentRole()] || 0) >= ROLE_RANK[min]; }
+
   // ---------------------------------------------------------------- utils --
   function currentQueryString() {
     // Bulk actions re-render the table; carrying the page's current sort/
@@ -353,12 +365,18 @@ window.Sentinel = (function () {
       menu.appendChild(submenuGroup('Change status', changeStatus.map(([to, label]) =>
         item(label, { onClick: () => singleTransition(tr, to) }))));
     }
-    const assignItems = [item('Assign to me', { onClick: () => singleAssign(tr, 'me') })];
-    roster().forEach(([uid, name]) => {
-      assignItems.push(item('Assign to ' + name, { onClick: () => singleAssign(tr, String(uid)) }));
-    });
-    menu.appendChild(submenuGroup('Assign', assignItems));
-    menu.appendChild(sep());
+    // Assign is analyst+ (§10.2) — actions[] is already server-filtered by
+    // role (see workflow_service.available_actions), but Assign isn't a
+    // status transition so it isn't covered by that filter and needs its own
+    // check here.
+    if (roleAtLeast('analyst')) {
+      const assignItems = [item('Assign to me', { onClick: () => singleAssign(tr, 'me') })];
+      roster().forEach(([uid, name]) => {
+        assignItems.push(item('Assign to ' + name, { onClick: () => singleAssign(tr, String(uid)) }));
+      });
+      menu.appendChild(submenuGroup('Assign', assignItems));
+      menu.appendChild(sep());
+    }
 
     if (suppressAction) {
       menu.appendChild(item('Suppress finding…', {
@@ -380,10 +398,12 @@ window.Sentinel = (function () {
       item('Copy remediation snippet', { onClick: () => copyFinding(tr, 'remediation') }),
       item('Copy finding link', { onClick: () => copyFinding(tr, 'link') }),
     ]));
-    menu.appendChild(sep());
-    menu.appendChild(item('Add comment…', {
-      onClick: () => { _focusCommentNext = true; openDrawer(groupIdOf(tr), { tab: 'activity' }); },
-    }));
+    if (roleAtLeast('analyst')) {
+      menu.appendChild(sep());
+      menu.appendChild(item('Add comment…', {
+        onClick: () => { _focusCommentNext = true; openDrawer(groupIdOf(tr), { tab: 'activity' }); },
+      }));
+    }
     void status; // status already folded into `actions`; kept for readability/debugging
     return menu;
   }
@@ -392,18 +412,29 @@ window.Sentinel = (function () {
     const n = selection.size;
     const menu = document.createElement('div');
     menu.className = 'ctx-menu';
-    menu.appendChild(submenuGroup(`Change status for ${n} findings`, [
-      item('Investigating', { onClick: () => bulkAct(ROUTES.bulkTransition, { to_status: 'investigating' }) }),
-      item('Resolved', { onClick: () => bulkAct(ROUTES.bulkTransition, { to_status: 'resolved' }) }),
-      item('Reopen', { onClick: () => bulkAct(ROUTES.bulkTransition, { to_status: 'open' }) }),
-    ]));
-    const assignItems = [item('Assign to me', { onClick: () => bulkAct(ROUTES.bulkAssign, { assignee_id: 'me' }) })];
-    roster().forEach(([uid, name]) => {
-      assignItems.push(item('Assign to ' + name, { onClick: () => bulkAct(ROUTES.bulkAssign, { assignee_id: String(uid) }) }));
-    });
-    menu.appendChild(submenuGroup(`Assign ${n} findings`, assignItems));
-    menu.appendChild(item(`Suppress ${n} findings…`, { onClick: () => promptBulkException('suppressed') }));
-    menu.appendChild(item(`Accept risk for ${n} findings…`, { onClick: () => promptBulkException('accepted_risk') }));
+    // Bulk actions inherit their single-item gate (§10.2): transition/assign/
+    // suppress are analyst+, accept-risk is admin-only. The row checkboxes
+    // that build `selection` are themselves hidden below analyst
+    // (findings_table.html), but keyboard shortcuts (Shift+j/k, x) can still
+    // add to `selection` regardless of role, so this menu re-checks role
+    // independently rather than trusting that selection is only ever
+    // non-empty for a role that's allowed to act on it.
+    if (roleAtLeast('analyst')) {
+      menu.appendChild(submenuGroup(`Change status for ${n} findings`, [
+        item('Investigating', { onClick: () => bulkAct(ROUTES.bulkTransition, { to_status: 'investigating' }) }),
+        item('Resolved', { onClick: () => bulkAct(ROUTES.bulkTransition, { to_status: 'resolved' }) }),
+        item('Reopen', { onClick: () => bulkAct(ROUTES.bulkTransition, { to_status: 'open' }) }),
+      ]));
+      const assignItems = [item('Assign to me', { onClick: () => bulkAct(ROUTES.bulkAssign, { assignee_id: 'me' }) })];
+      roster().forEach(([uid, name]) => {
+        assignItems.push(item('Assign to ' + name, { onClick: () => bulkAct(ROUTES.bulkAssign, { assignee_id: String(uid) }) }));
+      });
+      menu.appendChild(submenuGroup(`Assign ${n} findings`, assignItems));
+      menu.appendChild(item(`Suppress ${n} findings…`, { onClick: () => promptBulkException('suppressed') }));
+    }
+    if (roleAtLeast('admin')) {
+      menu.appendChild(item(`Accept risk for ${n} findings…`, { onClick: () => promptBulkException('accepted_risk') }));
+    }
     menu.appendChild(item(`Re-run checks for ${n} findings`, { disabled: true, hint: 'Phase 2' }));
     menu.appendChild(sep());
     menu.appendChild(item('Export selected…', { disabled: true, hint: 'not built' }));
@@ -619,7 +650,12 @@ window.Sentinel = (function () {
 
   function drawerOpen() { return !!document.querySelector('.drawer-panel'); }
 
+  // Every shortcut below fires an analyst+ action (workflow transition,
+  // assign, suppress, comment — §10.2); guard here too, not just in the
+  // context-menu builders, since row selection itself (Shift+j/k, x) has no
+  // role check and can't be relied on to stay empty for a read_only viewer.
   function handleStatusShortcut(toStatus) {
+    if (!roleAtLeast('analyst')) { toast('Not permitted for your role'); return; }
     if (selection.size >= 2) {
       bulkAct(ROUTES.bulkTransition, { to_status: toStatus });
     } else {
@@ -628,6 +664,7 @@ window.Sentinel = (function () {
     }
   }
   function handleAssignToMeShortcut() {
+    if (!roleAtLeast('analyst')) { toast('Not permitted for your role'); return; }
     if (selection.size >= 2) {
       bulkAct(ROUTES.bulkAssign, { assignee_id: 'me' });
     } else {
@@ -636,6 +673,7 @@ window.Sentinel = (function () {
     }
   }
   function handleSuppressShortcut() {
+    if (!roleAtLeast('analyst')) { toast('Not permitted for your role'); return; }
     if (selection.size >= 2) {
       promptBulkException('suppressed');
     } else {
@@ -644,6 +682,7 @@ window.Sentinel = (function () {
     }
   }
   function handleCommentShortcut() {
+    if (!roleAtLeast('analyst')) { toast('Not permitted for your role'); return; }
     const tr = focusedRow();
     if (tr) { _focusCommentNext = true; openDrawer(groupIdOf(tr), { tab: 'activity' }); }
   }

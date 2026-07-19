@@ -44,6 +44,7 @@ from app.services.finding_query import (
     sort_to_query,
 )
 from app.services.graph_view import list_principals_by_blast, principal_graph
+from app.services.rbac import Capability, PermissionDenied, at_least
 from app.services.run_query import get_run_row, list_runs, score_trend
 from app.services.scan_service import enqueue_scan
 from app.services.schedule_service import (
@@ -58,6 +59,7 @@ from app.services.workflow_service import (
     available_actions,
     transition,
 )
+from app.web.authz import require_role
 
 bp = Blueprint("web", __name__)
 # Single source of truth for the row-level context menu's "Change status" /
@@ -65,6 +67,9 @@ bp = Blueprint("web", __name__)
 # footer already uses. Registered so findings_table.html can call it per row
 # without a Python-side per-row loop.
 bp.add_app_template_global(available_actions)
+# Lets templates gate a control on role without importing rbac themselves
+# (§10.2) — e.g. {% if role_at_least(current_user.role, 'analyst') %}.
+bp.add_app_template_global(at_least, name="role_at_least")
 
 # Routes reachable without a session — everything else on this blueprint
 # requires login (§10.1). Static files aren't affected either way: they're
@@ -228,6 +233,7 @@ def accounts() -> Response | str:
 
 
 @bp.post("/accounts/connect")
+@require_role(Capability.CONNECT_ACCOUNT)
 def connect_account_route() -> Response | str | tuple[str, int]:
     name = request.form.get("name", "")
     method = request.form.get("method", "demo")
@@ -254,6 +260,7 @@ def connect_account_route() -> Response | str | tuple[str, int]:
                 policies_json=_read_upload("policies_file"),
                 logs_text=_read_upload("logs_file"),
                 actor_id=actor.id,
+                actor_role=actor.role,
             )
             # Step 3's optional "recurring scan" fields (§5.3 step 3 / §5.5) —
             # reuses the same thresholds just collected for the account, so the
@@ -270,7 +277,12 @@ def connect_account_route() -> Response | str | tuple[str, int]:
                     actor_id=actor.id,
                 )
                 new_schedule_id = new_schedule.id
-        except (ConnectError, ScheduleError) as exc:
+        except (ConnectError, ScheduleError, PermissionDenied) as exc:
+            # PermissionDenied here would mean the route decorator above was
+            # somehow bypassed — the defense-in-depth re-check inside
+            # connect_account() catching what it's not supposed to reach.
+            # Rendered as a normal wizard error rather than a 500, but this
+            # path should be unreachable in practice.
             rows = list_accounts(session)
             current = _current_account(session)
             current_id = current.id if current is not None else None
@@ -310,6 +322,7 @@ def connect_account_route() -> Response | str | tuple[str, int]:
 
 
 @bp.post("/accounts/<int:account_id>/scan")
+@require_role(Capability.RUN_SCAN)
 def rescan_account(account_id: int) -> Response:
     """Re-scan an existing account with its saved thresholds (§5.3 step 5's
     "Scan now"), via the background job queue — lands on the Runs page to
@@ -330,6 +343,7 @@ def rescan_account(account_id: int) -> Response:
 
 
 @bp.post("/accounts/<int:account_id>/schedule")
+@require_role(Capability.MANAGE_SCHEDULE)
 def save_schedule(account_id: int) -> Response | str | tuple[str, int]:
     """Create or update the account's recurring scan. One schedule per
     account (see schedule_service's module docstring) — reuses the account's
@@ -373,6 +387,7 @@ def save_schedule(account_id: int) -> Response | str | tuple[str, int]:
 
 
 @bp.post("/accounts/<int:account_id>/schedule/delete")
+@require_role(Capability.MANAGE_SCHEDULE)
 def delete_schedule_route(account_id: int) -> Response:
     with session_scope() as session:
         schedule_id = delete_schedule(session, account_id)
@@ -382,6 +397,7 @@ def delete_schedule_route(account_id: int) -> Response:
 
 
 @bp.post("/accounts/<int:account_id>/schedule/run-now")
+@require_role(Capability.MANAGE_SCHEDULE)
 def run_schedule_now(account_id: int) -> Response:
     """The schedule editor's "Run now" override (§5.5) — fires the SAME
     function the cron trigger calls, synchronously, rather than a separate
@@ -572,8 +588,11 @@ def runs_diff() -> Response | str | tuple[str, int]:
 
 def _render_drawer(session, group_id: int, **extra) -> str:  # noqa: ANN001, ANN003
     """Render the drawer partial for ``group_id`` (404s if missing). ``extra``
-    passes flags like ``oob_status`` / ``oob_assignee`` / ``error``."""
-    detail = get_finding_detail(session, group_id)
+    passes flags like ``oob_status`` / ``oob_assignee`` / ``error``. Always
+    resolves actions for the CURRENT caller's role (§10.2), so the footer
+    buttons and the row's data-actions never offer more than the viewer is
+    actually allowed to do."""
+    detail = get_finding_detail(session, group_id, actor_role=current_user.role)
     if detail is None:
         abort(404)
     return render_template(
@@ -605,6 +624,7 @@ def finding_drawer(group_id: int) -> Response | str:
 
 
 @bp.post("/findings/<int:group_id>/transition")
+@require_role(Capability.WORKFLOW_TRANSITION)
 def finding_transition(group_id: int) -> Response | str | tuple[str, int]:
     """Apply a status change and return the refreshed drawer plus an out-of-band
     swap for the table row's status pill. Reopening from suppressed/accepted-risk
@@ -638,16 +658,20 @@ def _apply_exception(group_id: int, kind: str) -> Response | str | tuple[str, in
         try:
             create_exception(
                 session, detail.group, kind=kind, reason=reason, actor_id=actor.id,
-                expires_at=expires_at,
+                actor_role=actor.role, expires_at=expires_at,
             )
         except InvalidTransition as exc:
             return _render_drawer(session, group_id, error=str(exc)), 409
-        except ExceptionError as exc:
+        except (ExceptionError, PermissionDenied) as exc:
+            # PermissionDenied here means the route decorator below was
+            # somehow bypassed — should be unreachable in practice, rendered
+            # as a normal 400 rather than a 500.
             return _render_drawer(session, group_id, error=str(exc)), 400
         return _render_drawer(session, group_id, oob_status=True)
 
 
 @bp.post("/findings/<int:group_id>/suppress")
+@require_role(Capability.SUPPRESS)
 def finding_suppress(group_id: int) -> Response | str | tuple[str, int]:
     """Suppress a finding: requires a reason, no expiry (§7.4 — suppression is
     "don't show me this", not time-boxed)."""
@@ -655,6 +679,7 @@ def finding_suppress(group_id: int) -> Response | str | tuple[str, int]:
 
 
 @bp.post("/findings/<int:group_id>/accept-risk")
+@require_role(Capability.ACCEPT_RISK_CREATE)
 def finding_accept_risk(group_id: int) -> Response | str | tuple[str, int]:
     """Accept risk on a finding: requires a reason, optional expiry after which
     it auto-reopens (§7.4)."""
@@ -662,6 +687,7 @@ def finding_accept_risk(group_id: int) -> Response | str | tuple[str, int]:
 
 
 @bp.post("/findings/<int:group_id>/comment")
+@require_role(Capability.COMMENT)
 def finding_comment(group_id: int) -> Response | str | tuple[str, int]:
     """Add a comment and return the refreshed drawer (Activity tab focused)."""
     body = request.form.get("body") or ""
@@ -678,6 +704,7 @@ def finding_comment(group_id: int) -> Response | str | tuple[str, int]:
 
 
 @bp.post("/findings/<int:group_id>/assign")
+@require_role(Capability.ASSIGN)
 def finding_assign(group_id: int) -> Response | str:
     """Assign/unassign the finding and return the refreshed drawer plus an
     out-of-band swap for the table row's assignee cell. ``assignee_id`` may be
@@ -724,6 +751,7 @@ def _bulk_response(result) -> str:  # noqa: ANN001
 
 
 @bp.post("/findings/bulk/transition")
+@require_role(Capability.WORKFLOW_TRANSITION)
 def bulk_finding_transition() -> Response | str:
     group_ids = _parse_group_ids()
     to_status = (request.form.get("to_status") or "").strip()
@@ -737,6 +765,7 @@ def bulk_finding_transition() -> Response | str:
 
 
 @bp.post("/findings/bulk/assign")
+@require_role(Capability.ASSIGN)
 def bulk_finding_assign() -> Response | str:
     group_ids = _parse_group_ids()
     raw = (request.form.get("assignee_id") or "").strip()
@@ -748,11 +777,13 @@ def bulk_finding_assign() -> Response | str:
 
 
 @bp.post("/findings/bulk/suppress")
+@require_role(Capability.SUPPRESS)
 def bulk_finding_suppress() -> Response | str:
     return _bulk_apply_exception("suppressed")
 
 
 @bp.post("/findings/bulk/accept-risk")
+@require_role(Capability.ACCEPT_RISK_CREATE)
 def bulk_finding_accept_risk() -> Response | str:
     return _bulk_apply_exception("accepted_risk")
 
@@ -764,7 +795,8 @@ def _bulk_apply_exception(kind: str) -> Response | str:
     with session_scope() as session:
         actor = current_user
         result = bulk_exception(
-            session, group_ids, kind, reason=reason, actor_id=actor.id, expires_at=expires_at
+            session, group_ids, kind, reason=reason, actor_id=actor.id,
+            actor_role=actor.role, expires_at=expires_at,
         )
     return _bulk_response(result)
 

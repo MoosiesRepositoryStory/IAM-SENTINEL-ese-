@@ -7,7 +7,9 @@
 <div x-data="wizard">
 <div class="page-head">
   <h1>Accounts</h1>
+  {% if role_at_least(current_user.role, 'admin') %}
   <button type="button" class="btn primary" style="margin-left:auto" @click="show = true; step = 1">+ Connect Account</button>
+  {% endif %}
 </div>
 <p class="page-sub">Cloud environments connected to IAM Sentinel. Each scan snapshots identities, policies, and auth activity for analysis.</p>
 
@@ -63,6 +65,7 @@
           {% else %}
             <span class="muted" style="font-size:11.5px">No schedule</span>
           {% endif %}
+          {% if role_at_least(current_user.role, 'analyst') %}
           <!-- Single-quoted: tojson's output is double-quoted JSON, which
                would otherwise collide with a double-quoted HTML attribute
                delimiter (tojson escapes ' as ', so this direction is safe). -->
@@ -79,11 +82,14 @@
                   onclick="Sentinel.openScheduleModal(JSON.parse(this.dataset.schedule))">
             {{ 'Edit' if row.schedule else 'Schedule' }}
           </button>
+          {% endif %}
         </td>
         <td>
+          {% if role_at_least(current_user.role, 'analyst') %}
           <form method="post" action="{{ url_for('web.rescan_account', account_id=row.account.id) }}" style="display:inline">
             <button type="submit" class="btn ghost tiny">Scan now</button>
           </form>
+          {% endif %}
           {% if row.account.id == current_account_id and row.latest_run and row.latest_run.status == 'completed' %}
           <a class="btn ghost tiny" href="{{ url_for('web.findings') }}">View findings</a>
           {% endif %}

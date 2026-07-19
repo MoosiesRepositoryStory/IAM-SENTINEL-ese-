@@ -10,8 +10,12 @@ The exception side-effects that ``suppressed`` and ``accepted_risk`` carry in
 §7.4 — a ``finding_exception`` row with a reason + expiry + scheduler-driven
 re-surfacing — live in ``app.services.exception_service``, which calls
 ``transition`` here so creating, revoking, or auto-expiring an exception all
-still land as ordinary history rows. Role enforcement (§10) arrives with auth in
-Phase 4; for now ``actor_id`` is recorded but not gated.
+still land as ordinary history rows. ``transition`` itself stays ungated
+(§10.2's WORKFLOW_TRANSITION capability is analyst+ uniformly, including
+exception-revoke reopens, so the route decorator alone is sufficient there);
+:func:`available_actions` is the one role-aware piece in this module, since
+which transitions to *offer* differs by role (§10.2's admin-only accept-risk
+carve-out).
 """
 
 from __future__ import annotations
@@ -20,6 +24,7 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.models import Finding, FindingGroup, FindingStatusHistory
+from app.services import rbac
 
 # UI-facing transitions available from each state, in button order:
 # (target status, verb label). ALLOWED_TRANSITIONS is derived from this so the
@@ -58,9 +63,24 @@ class InvalidTransition(ValueError):
         super().__init__(f"Cannot transition finding from '{from_status}' to '{to_status}'")
 
 
-def available_actions(status: str) -> list[tuple[str, str]]:
-    """Transition buttons to offer for a group currently in ``status``."""
-    return TRANSITION_ACTIONS.get(status, [])
+def available_actions(status: str, role: str | None = None) -> list[tuple[str, str]]:
+    """Transition buttons to offer for a group currently in ``status``,
+    filtered by ``role`` (§10.2): a read_only role gets none (view-only); an
+    analyst gets everything except *creating* an accepted-risk exception
+    (admin-only) — reopening FROM accepted_risk is still offered to analyst,
+    since that's a de-escalation, not a new risk-acceptance decision, and its
+    target status is "open", not "accepted_risk", so the filter below leaves
+    it untouched. ``role=None`` (the default) returns every transition
+    unfiltered, for callers that don't care about role (see
+    ``app.services.rbac``'s module docstring on this convention)."""
+    actions = TRANSITION_ACTIONS.get(status, [])
+    if role is None:
+        return actions
+    if not rbac.at_least(role, "analyst"):
+        return []
+    if not rbac.at_least(role, "admin"):
+        actions = [(to, label) for to, label in actions if to != "accepted_risk"]
+    return actions
 
 
 def transition(

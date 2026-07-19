@@ -8,7 +8,7 @@
    single-row mutation until the next full-table render. #}
 <td id="row-status-{{ d.group.id }}" hx-swap-oob="true"
     data-status="{{ d.group.current_status }}"
-    data-actions='{{ available_actions(d.group.current_status) | tojson }}'>
+    data-actions='{{ available_actions(d.group.current_status, current_user.role) | tojson }}'>
   <span class="status st-{{ d.group.current_status }}">{{ d.group.current_status | replace('_', ' ') }}</span>
   {% if d.exception %}
   <span class="exc-badge" title="{{ d.exception.reason }}{{ ' · Expires ' ~ d.exception.expires_at if d.exception.expires_at else ' · No expiry' }}">⏳</span>
@@ -92,6 +92,7 @@
           {% else %}
             <span class="muted">Unassigned</span>
           {% endif %}
+          {% if role_at_least(current_user.role, 'analyst') %}
           <div class="assign-controls">
             <button class="btn ghost tiny"
                     hx-post="{{ url_for('web.finding_assign', group_id=d.group.id) }}"
@@ -107,6 +108,7 @@
               {% endfor %}
             </select>
           </div>
+          {% endif %}
         </dd>
         <dt>Risk score</dt><dd>{{ f.risk_score }}/100</dd>
         <dt>Severity</dt><dd>{{ f.severity | capitalize }}</dd>
@@ -186,6 +188,7 @@
 
     <!-- Activity / audit trail: status + comments + assignment, unified -->
     <section data-tab="activity" style="{{ 'display:none' if active_tab != 'activity' }}">
+      {% if role_at_least(current_user.role, 'analyst') %}
       <div class="comment-box">
         <textarea id="comment-{{ d.group.id }}" name="body" class="note-input"
                   placeholder="Add a comment…" rows="2"></textarea>
@@ -194,6 +197,7 @@
                 hx-include="#comment-{{ d.group.id }}"
                 hx-target="#drawer" hx-swap="innerHTML">Comment</button>
       </div>
+      {% endif %}
 
       <ol class="timeline">
         {% for e in d.activity | reverse %}

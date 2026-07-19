@@ -40,22 +40,29 @@
     </div>
   </div>
 
+  {% set can_mutate = role_at_least(current_user.role, 'analyst') %}
   {% if result.rows %}
   {# Bulk action bar (§8.4): hidden until Sentinel's selection count is >= 1;
      JS toggles display and fills the count. Lives inside table-region so it
      reappears correctly after every htmx swap (selection itself is cleared on
-     swap — see app.js). #}
+     swap — see app.js). Bulk actions are all analyst+ (§10.2), so a read_only
+     viewer never sees selection UI at all — nothing it could select would do
+     anything. #}
+  {% if can_mutate %}
   <div id="bulk-bar" class="bulk-bar" style="display:none">
     <span class="bulk-count">0 selected</span>
     <button type="button" class="btn ghost tiny" onclick="Sentinel.clearSelection()">Clear</button>
     <span class="bulk-hint">Right-click a selected row for bulk actions</span>
   </div>
+  {% endif %}
   <div class="tbl-scroll">
   <table class="findings">
     <thead>
       <tr>
+        {% if can_mutate %}
         <th class="sel-col"><input type="checkbox" class="select-all" aria-label="Select all"
              onchange="Sentinel.selectAll(this.checked)"></th>
+        {% endif %}
         {% for col in columns if col.key in colset %}
           {% if col.sortable %}
           <th class="sortable {{ 'num' if col.key == 'risk' }}"
@@ -74,17 +81,19 @@
       <tr hx-get="{{ url_for('web.finding_drawer', group_id=f.group_id) }}"
           hx-target="#drawer" hx-swap="innerHTML" hx-push-url="true"
           data-group-id="{{ f.group_id }}" data-status="{{ f.status }}"
-          data-actions='{{ available_actions(f.status) | tojson }}'
+          data-actions='{{ available_actions(f.status, current_user.role) | tojson }}'
           data-finding='{{ {
             "title": f.title, "principal": f.principal_uid, "category": f.category,
             "check_id": f.check_id, "risk": f.risk_score, "severity": f.severity,
             "recommendation": f.recommendation, "remediation": f.remediation_snippet,
           } | tojson }}'
           oncontextmenu="return Sentinel.onRowContextMenu(event, this)">
+        {% if can_mutate %}
         <td class="sel-col" onclick="event.stopPropagation()">
           <input type="checkbox" class="row-select" aria-label="Select row"
                  onclick="Sentinel.onCheckboxClick(event, this)">
         </td>
+        {% endif %}
         {% for col in columns if col.key in colset %}
           {% if col.key == 'risk' %}
             <td class="num"><span class="risk {{ sev_class.get(f.severity, 'r-low') }}">{{ f.risk_score }}</span></td>

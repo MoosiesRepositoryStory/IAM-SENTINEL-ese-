@@ -102,8 +102,14 @@ def _name_map(session: Session, ids: set[int]) -> dict[int, str]:
     }
 
 
-def get_finding_detail(session: Session, group_id: int) -> FindingDetail | None:
-    """Return the drawer payload for ``group_id``, or ``None`` if it doesn't exist."""
+def get_finding_detail(
+    session: Session, group_id: int, *, actor_role: str | None = None
+) -> FindingDetail | None:
+    """Return the drawer payload for ``group_id``, or ``None`` if it doesn't
+    exist. ``actor_role`` is forwarded to ``available_actions`` so the drawer
+    footer only offers transitions the caller's role permits (§10.2) —
+    ``None`` (the default) offers every transition unfiltered, matching
+    ``available_actions``'s own convention for internal/test callers."""
     group = session.get(FindingGroup, group_id)
     if group is None:
         return None
@@ -209,5 +215,5 @@ def get_finding_detail(session: Session, group_id: int) -> FindingDetail | None:
         first_seen=_run_date(session, group.first_seen_run),
         last_seen=_run_date(session, group.last_seen_run),
         age_days=days_since(parse_dt(_run_date(session, group.first_seen_run))),
-        actions=available_actions(group.current_status),
+        actions=available_actions(group.current_status, actor_role),
     )

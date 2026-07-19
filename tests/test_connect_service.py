@@ -15,6 +15,8 @@ from app.domain.records import Thresholds
 from app.models import Account
 from app.services.account_service import list_accounts
 from app.services.connect_service import ConnectError, connect_account
+from app.services.rbac import PermissionDenied
+from sqlalchemy import select
 
 _SAMPLES = Path(__file__).resolve().parent.parent / "samples"
 
@@ -40,6 +42,45 @@ def test_assume_role_requires_well_formed_arn(db_session) -> None:
 def test_upload_requires_at_least_one_file(db_session) -> None:
     with pytest.raises(ConnectError, match="Upload at least one file"):
         connect_account(db_session, name="Acme", method="upload", thresholds=Thresholds())
+
+
+# ---- RBAC defense-in-depth (§10.2, Phase 4 Slice 2) ----
+# The route layer (require_role(Capability.CONNECT_ACCOUNT)) is the primary
+# gate; these prove the service-layer re-check independently rejects a
+# forged/bypassed call to connect_account() itself.
+
+
+def test_connect_rejected_for_analyst_actor_role(db_session) -> None:
+    with pytest.raises(PermissionDenied):
+        connect_account(
+            db_session, name="Acme", method="demo", thresholds=Thresholds(),
+            actor_role="analyst",
+        )
+    assert db_session.scalars(select(Account)).all() == []
+
+
+def test_connect_rejected_for_read_only_actor_role(db_session) -> None:
+    with pytest.raises(PermissionDenied):
+        connect_account(
+            db_session, name="Acme", method="demo", thresholds=Thresholds(),
+            actor_role="read_only",
+        )
+
+
+def test_connect_allowed_for_admin_actor_role(db_session) -> None:
+    account_id = connect_account(
+        db_session, name="Acme", method="demo", thresholds=Thresholds(),
+        actor_role="admin",
+    )
+    assert db_session.get(Account, account_id) is not None
+
+
+def test_connect_actor_role_none_is_trusted_unchecked(db_session) -> None:
+    """The default ``actor_role=None`` means "trusted internal caller, no
+    check" — every pre-existing test above that omits it must keep working
+    unchanged."""
+    account_id = connect_account(db_session, name="Acme", method="demo", thresholds=Thresholds())
+    assert db_session.get(Account, account_id) is not None
 
 
 def test_demo_method_creates_a_moto_account(db_session) -> None:

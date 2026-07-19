@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from sqlalchemy.orm import Session
 
 from app.models import AuditEvent, FindingGroup
+from app.services import rbac
 from app.services.collaboration import assign
 from app.services.exception_service import ExceptionError, create_exception
 from app.services.workflow_service import InvalidTransition, transition
@@ -92,6 +93,7 @@ def bulk_exception(
     *,
     reason: str,
     actor_id: int,
+    actor_role: str | None = None,
     expires_at: str | None = None,
 ) -> BulkResult:
     """Suppress or accept-risk every group in ``group_ids`` with one shared
@@ -100,7 +102,9 @@ def bulk_exception(
     on every call (cheap, and it's the single source of truth for that rule) —
     a bad reason/date is therefore identically rejected for every item, so in
     practice nothing in the batch succeeds, without needing a separate
-    up-front check here."""
+    up-front check here. ``actor_role`` is forwarded to that same per-item
+    call, so a bulk accept-risk is exactly as admin-gated as a single one
+    (§10.2's "bulk actions inherit their single-item gate")."""
     result = BulkResult(action=kind)
     for gid in group_ids:
         group = session.get(FindingGroup, gid)
@@ -109,9 +113,10 @@ def bulk_exception(
             continue
         try:
             create_exception(
-                session, group, kind=kind, reason=reason, actor_id=actor_id, expires_at=expires_at
+                session, group, kind=kind, reason=reason, actor_id=actor_id,
+                actor_role=actor_role, expires_at=expires_at,
             )
-        except (InvalidTransition, ExceptionError) as exc:
+        except (InvalidTransition, ExceptionError, rbac.PermissionDenied) as exc:
             result.failed.append((gid, str(exc)))
         else:
             result.succeeded.append(gid)

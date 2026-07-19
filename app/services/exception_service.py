@@ -32,6 +32,7 @@ from app.domain.enums import ExceptionKind
 from app.domain.timeutil import utcnow
 from app.models import FindingException, FindingGroup
 from app.models.base import now_iso
+from app.services import rbac
 from app.services.workflow_service import transition
 
 # The two finding_group statuses that carry an active exception. Values match
@@ -60,6 +61,7 @@ def create_exception(
     kind: str,
     reason: str,
     actor_id: int,
+    actor_role: str | None = None,
     expires_at: str | None = None,
 ) -> FindingException:
     """Suppress or accept-risk ``group``. Input is validated *before* touching
@@ -67,9 +69,17 @@ def create_exception(
     transition. Raises :class:`ExceptionError` for bad input, or
     :class:`~app.services.workflow_service.InvalidTransition` if ``group`` isn't
     currently ``open`` — the only state §7.1 allows either exception from.
+
+    ``actor_role``, when given, is a defense-in-depth re-check (§10.2): only
+    admins may create an ``accepted_risk`` exception — suppression has no such
+    restriction. See ``app.services.rbac``'s module docstring for why this
+    parameter defaults to ``None`` ("trusted caller, no check") rather than
+    being required.
     """
     if kind not in EXCEPTION_STATUSES:
         raise ExceptionError(f"Invalid exception kind: {kind!r}")
+    if kind == "accepted_risk" and actor_role is not None and not rbac.at_least(actor_role, "admin"):
+        raise rbac.PermissionDenied("Only admins may accept risk on a finding.")
     clean_reason = (reason or "").strip()
     if not clean_reason:
         raise ExceptionError("A reason is required")

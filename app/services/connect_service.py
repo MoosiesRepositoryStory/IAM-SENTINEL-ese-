@@ -22,6 +22,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.domain.records import Thresholds
+from app.services import rbac
 from app.services.account_service import create_account
 
 CONNECTION_METHODS = ("demo", "assume_role", "upload")
@@ -47,10 +48,19 @@ def connect_account(
     policies_json: str | None = None,
     logs_text: str | None = None,
     actor_id: int | None = None,
+    actor_role: str | None = None,
 ) -> int:
     """Validate wizard input and create the account, returning its id. Does
     NOT scan — call ``enqueue_scan(account_id, ...)`` after this call's session
-    has committed."""
+    has committed.
+
+    ``actor_role``, when given, is a defense-in-depth re-check (§10.2):
+    connecting an account is admin-only. See ``app.services.rbac``'s module
+    docstring for why this parameter defaults to ``None`` ("trusted caller,
+    no check") rather than being required.
+    """
+    if actor_role is not None and not rbac.at_least(actor_role, "admin"):
+        raise rbac.PermissionDenied("Only admins may connect a new account.")
     name = (name or "").strip()
     if not name:
         raise ConnectError("Account name is required.")

@@ -18,6 +18,7 @@ from app.services.exception_service import (
     revoke_exception,
 )
 from app.services.finding_detail import get_finding_detail
+from app.services.rbac import PermissionDenied
 from app.services.workflow_service import InvalidTransition
 from sqlalchemy import select
 
@@ -98,6 +99,67 @@ def test_invalid_expiry_rejected(db_session) -> None:
             expires_at="not-a-date",
         )
     assert group.current_status == "open"
+
+
+# ---- RBAC defense-in-depth (§10.2, Phase 4 Slice 2) ----
+# The route layer (require_role) is the primary gate; these prove the
+# service-layer re-check independently rejects a forged/bypassed call —
+# i.e. even a caller that reached create_exception() without going through
+# the decorated route still can't accept risk below admin.
+
+
+def test_accept_risk_rejected_for_analyst_actor_role(db_session) -> None:
+    _scan(db_session)
+    group = _groups(db_session)[0]
+    actor = _actor(db_session)
+    with pytest.raises(PermissionDenied):
+        create_exception(
+            db_session, group, kind="accepted_risk", reason="x",
+            actor_id=actor.id, actor_role="analyst",
+        )
+    # Rejected before any transition — no partial state change.
+    assert group.current_status == "open"
+    assert db_session.scalars(select(FindingException)).all() == []
+
+
+def test_accept_risk_allowed_for_admin_actor_role(db_session) -> None:
+    _scan(db_session)
+    group = _groups(db_session)[0]
+    actor = _actor(db_session)
+    exc = create_exception(
+        db_session, group, kind="accepted_risk", reason="Tracked in JIRA-42",
+        actor_id=actor.id, actor_role="admin",
+    )
+    assert group.current_status == "accepted_risk"
+    assert exc.reason == "Tracked in JIRA-42"
+
+
+def test_accept_risk_actor_role_none_is_trusted_unchecked(db_session) -> None:
+    """The default ``actor_role=None`` means "trusted internal caller, no
+    check" (see rbac.py's module docstring) — every pre-existing test above
+    that omits it must keep working unchanged."""
+    _scan(db_session)
+    group = _groups(db_session)[0]
+    actor = _actor(db_session)
+    exc = create_exception(
+        db_session, group, kind="accepted_risk", reason="x", actor_id=actor.id
+    )
+    assert group.current_status == "accepted_risk"
+    assert exc is not None
+
+
+def test_suppress_has_no_role_split_analyst_actor_role_allowed(db_session) -> None:
+    """Suppression carries no admin/analyst split (§10.2) — an analyst
+    ``actor_role`` must NOT be rejected the way accept-risk is."""
+    _scan(db_session)
+    group = _groups(db_session)[0]
+    actor = _actor(db_session)
+    exc = create_exception(
+        db_session, group, kind="suppressed", reason="Known noise",
+        actor_id=actor.id, actor_role="analyst",
+    )
+    assert group.current_status == "suppressed"
+    assert exc.reason == "Known noise"
 
 
 def test_invalid_kind_rejected(db_session) -> None:

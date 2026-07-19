@@ -34,7 +34,7 @@
     });
   </script>
 </head>
-<body>
+<body data-role="{{ current_user.role if current_user.is_authenticated else '' }}">
 <div class="app">
   <aside class="sidebar">
     <div class="brand"><span class="logo">🛡️</span> IAM Sentinel</div>
