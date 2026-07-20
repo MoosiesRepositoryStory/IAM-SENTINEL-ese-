@@ -38,3 +38,55 @@ jobs:
         run: alembic upgrade head
         env:
           DATABASE_URL: sqlite:///ci.db
+
+  e2e:
+    runs-on: ubuntu-latest
+    # Independent of `quality` (runs in parallel, not blocked on it) — see
+    # tests/e2e/README.md. Needs its own live server + seeded DB + a browser
+    # binary, none of which the unit-test job has.
+    env:
+      DATA_DIR: ${{ runner.temp }}/e2e-data
+      DATABASE_URL: sqlite:///${{ runner.temp }}/e2e-data/e2e.db
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,e2e]"
+          playwright install --with-deps chromium
+
+      - name: Seed E2E data
+        run: python tests/e2e/seed.py
+
+      - name: Start server
+        run: |
+          python tests/e2e/server.py 5000 > server.log 2>&1 &
+          echo $! > server.pid
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:5000/healthz > /dev/null; then
+              echo "Server is up."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Server never became healthy." >&2
+          cat server.log
+          exit 1
+
+      - name: Run E2E suite
+        run: pytest tests/e2e --base-url=http://127.0.0.1:5000 -v
+
+      - name: Server log
+        if: always()
+        run: cat server.log || true
+
+      - name: Stop server
+        if: always()
+        run: kill "$(cat server.pid)" 2>/dev/null || true

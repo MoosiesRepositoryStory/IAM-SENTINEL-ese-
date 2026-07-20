@@ -5,6 +5,19 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased] — Phase 5: DevEx & repo polish (in progress)
 
+### Added
+- Committed Playwright E2E suite (`tests/e2e/`, own README): login/logout +
+  RBAC gating across all three seeded demo roles, one full findings-workflow
+  cycle (transition/comment/assign/suppress), the run-to-run diff view, and
+  blast-radius graph rendering (verified via the real Cytoscape instance, not
+  just markup presence) — the handful of flows most likely to actually catch
+  a browser-level regression, not a recreation of every ad hoc verification
+  script run by hand across every phase. Wired as its own `e2e` CI job,
+  independent of `quality`: seeds a scratch DB (two moto scans, so the diff/
+  graph views have real drift/escalation data to render), backgrounds the
+  real Flask app, polls `/healthz`, then runs the suite against it over HTTP
+  only — no route-internal shortcuts.
+
 ### Fixed
 - CI workflow's push trigger targeted a `main` branch that doesn't exist in
   this repo (only `master` does) — CI had never actually run on a push here.
@@ -79,6 +92,20 @@ All notable changes to this project are documented here. Format follows
   creating a genuine second ticket in the external system, and silently
   overwrite `group.ticket_ref` with the new one, orphaning the first. Now
   rejects with `TicketError` when `group.ticket_ref` is already set.
+- Suppress/accept-risk on the finding drawer silently stopped working
+  whenever it followed any prior transition or assignment in the same
+  drawer session — found by the new E2E suite's workflow-cycle test, not
+  previously caught since no prior Playwright pass had chained those
+  actions together. Root cause: htmx 2.0.4 corrupts a `<form>`'s element
+  association (`.form`/`closest('form')` on its descendants silently
+  becomes null, so its submit button stops firing) when an `hx-swap-oob`
+  element precedes that `<form>` in the same response — confirmed via a
+  minimal reproduction using only the vendored `htmx.min.js`, no Alpine, no
+  rest of the app. `finding_drawer.html`'s suppress/accept-risk forms sit in
+  the footer, and most mutations (transition, assign) render their OOB
+  row-sync block *before* that footer. Fixed by moving the OOB blocks to
+  the end of the template — a plain reordering, no behavior change to what
+  gets swapped where.
 
 ### Changed
 - Moved Flask-Login, Flask-WTF, argon2-cffi, email-validator, APScheduler,
