@@ -50,6 +50,17 @@ def create_ticket(
         raise TicketError("A title is required.")
     clean_body = (body or "").strip()
 
+    if group.ticket_ref:
+        # A retry (double-click, client timeout on a request that actually
+        # succeeded server-side, etc.) must not call the adapter a second
+        # time — that would create a genuine second ticket in the external
+        # system, and the group.ticket_ref assignment below would silently
+        # overwrite the first one's reference, orphaning it with no link
+        # back from this app.
+        raise TicketError(
+            f"A ticket already exists for this finding ({group.ticket_ref!r})."
+        )
+
     target = session.get(IntegrationTarget, target_id)
     if target is None:
         raise TicketError("Integration target not found.")

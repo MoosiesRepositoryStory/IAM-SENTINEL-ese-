@@ -132,7 +132,22 @@ def enqueue_scan(
             except ScanError:
                 pass  # execute_scan already recorded the failure on the Run row
 
-    get_job_queue().submit(_job)
+    try:
+        get_job_queue().submit(_job)
+    except Exception as exc:  # noqa: BLE001 — record the failure, then re-raise wrapped.
+        # Without this, a queue that rejects the job (pool exhausted/shut
+        # down) leaves the Run permanently stuck ``queued`` — nothing ever
+        # calls execute_scan to move it out of that state, so the Runs page
+        # poller would spin forever on a job that was never actually
+        # accepted. Mirrors execute_scan's own record-then-raise shape.
+        with session_scope() as session:
+            failed_run = session.get(Run, run_id)
+            if failed_run is not None:
+                failed_run.status = RunStatus.FAILED.value
+                failed_run.error_message = f"Failed to enqueue scan: {exc}"
+                failed_run.finished_at = now_iso()
+        raise ScanError(f"Failed to enqueue scan: {exc}") from exc
+
     return run_id
 
 

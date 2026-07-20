@@ -67,6 +67,18 @@ All notable changes to this project are documented here. Format follows
   active" before either committed and both proceed, leaving zero active
   admins. Added `_lock_active_admins()`: `BEGIN IMMEDIATE` on SQLite,
   `SELECT ... FOR UPDATE` on Postgres, run before the count is read.
+- `enqueue_scan()` didn't handle the job queue itself rejecting a submission
+  (pool exhausted/shut down) — the Run stayed stuck `queued` forever, since
+  nothing would ever call `execute_scan` to move it out of that state. The
+  submission is now wrapped in `try`/`except`: on failure the Run is marked
+  `failed` with the error recorded, mirroring `execute_scan`'s own
+  record-then-raise shape.
+- `ticket_service.create_ticket()` had no guard against being called twice
+  for the same finding group — a retry (double-click, a client timeout on a
+  request that actually succeeded server-side) would call the adapter again,
+  creating a genuine second ticket in the external system, and silently
+  overwrite `group.ticket_ref` with the new one, orphaning the first. Now
+  rejects with `TicketError` when `group.ticket_ref` is already set.
 
 ### Changed
 - Moved Flask-Login, Flask-WTF, argon2-cffi, email-validator, APScheduler,

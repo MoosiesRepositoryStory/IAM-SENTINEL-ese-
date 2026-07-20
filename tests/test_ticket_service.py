@@ -96,6 +96,33 @@ def test_create_ticket_disabled_target_rejected(db_session) -> None:
         )
 
 
+def test_create_ticket_rejects_when_ticket_ref_already_set(db_session) -> None:
+    """A retry (double-click, client timeout on a request that actually
+    succeeded server-side) must not call the adapter a second time — that
+    would create a genuine second ticket in the external system rather than
+    just re-showing the first one."""
+    group, finding = _seed(db_session)
+    target = create_target(db_session, kind="jira", name="Jira", config={"project_key": "SEC"})
+    create_ticket(
+        db_session, group, finding, target_id=target.id, title="MFA gap",
+        body="details", finding_url="https://x",
+    )
+    db_session.refresh(group)
+    first_ref = group.ticket_ref
+    assert first_ref is not None
+
+    with pytest.raises(TicketError, match="already exists"):
+        create_ticket(
+            db_session, group, finding, target_id=target.id, title="MFA gap (retry)",
+            body="details", finding_url="https://x",
+        )
+
+    db_session.refresh(group)
+    assert group.ticket_ref == first_ref  # unchanged — no second ticket, no overwrite
+    events = db_session.scalars(select(AuditEvent).where(AuditEvent.action == "ticket_created")).all()
+    assert len(events) == 1
+
+
 def test_create_ticket_via_webhook_target(db_session, local_http_server, allow_loopback_webhook_targets) -> None:
     group, finding = _seed(db_session)
     url = f"http://127.0.0.1:{local_http_server.server_port}/hook"
