@@ -41,6 +41,14 @@ All notable changes to this project are documented here. Format follows
   poisonable by a spoofed Host on an unauthenticated-adjacent path. A new
   optional `PUBLIC_BASE_URL` setting pins the external base URL when set;
   unset (dev/demo default) keeps deriving from the request, unchanged.
+- The webhook integration adapter POSTed to any admin-configured URL with no
+  destination validation — an SSRF risk against loopback/internal/cloud-
+  metadata addresses, worse in a public deployment where the admin login is
+  shared. `app/integrations/net_safety.py` now validates scheme/credentials,
+  resolves the host once, rejects unsafe resolved addresses (loopback,
+  private, link-local, reserved, multicast, and their IPv4-mapped IPv6
+  forms), and pins the outbound connection to that validated IP so a second,
+  different DNS answer can't be substituted at connect time.
 
 ### Changed
 - Moved Flask-Login, Flask-WTF, argon2-cffi, email-validator, APScheduler,

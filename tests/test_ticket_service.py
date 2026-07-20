@@ -96,7 +96,7 @@ def test_create_ticket_disabled_target_rejected(db_session) -> None:
         )
 
 
-def test_create_ticket_via_webhook_target(db_session, local_http_server) -> None:
+def test_create_ticket_via_webhook_target(db_session, local_http_server, allow_loopback_webhook_targets) -> None:
     group, finding = _seed(db_session)
     url = f"http://127.0.0.1:{local_http_server.server_port}/hook"
     target = create_target(db_session, kind="webhook", name="Hook", config={"url": url})

@@ -92,6 +92,19 @@ def local_http_server() -> Iterator[HTTPServer]:
         thread.join(timeout=5)
 
 
+@pytest.fixture
+def allow_loopback_webhook_targets(monkeypatch) -> None:
+    """``WebhookAdapter``'s real-network tests exercise it against
+    ``local_http_server`` — necessarily bound to loopback, the only address a
+    test process can safely stand up a receiver on. Production code always
+    rejects loopback/private/link-local targets (see
+    ``app.integrations.net_safety``'s SSRF guard) with no configurable
+    bypass, so these specific tests monkeypatch the one check that would
+    otherwise reject their own test fixture, rather than the product having
+    an opt-out flag."""
+    monkeypatch.setattr("app.integrations.net_safety._is_unsafe_address", lambda addr: False)
+
+
 def principal(uid: str, **kwargs) -> PrincipalRecord:
     return PrincipalRecord(principal_uid=uid, **kwargs)
 

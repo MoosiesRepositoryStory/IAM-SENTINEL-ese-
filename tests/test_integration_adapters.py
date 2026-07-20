@@ -61,7 +61,7 @@ def test_get_adapter_returns_a_fresh_instance() -> None:
 # ---- WebhookAdapter: real HTTP, not mocked (server fixture in conftest.py) --
 
 
-def test_webhook_adapter_really_posts_json(local_http_server) -> None:
+def test_webhook_adapter_really_posts_json(local_http_server, allow_loopback_webhook_targets) -> None:
     url = f"http://127.0.0.1:{local_http_server.server_port}/hooks/sentinel"
     adapter = WebhookAdapter()
     ref = adapter.create_ticket(
@@ -88,7 +88,7 @@ def test_webhook_adapter_missing_url_raises(local_http_server) -> None:
         adapter.create_ticket(_finding_view(), {}, title="x", body="")
 
 
-def test_webhook_adapter_non_2xx_raises(local_http_server) -> None:
+def test_webhook_adapter_non_2xx_raises(local_http_server, allow_loopback_webhook_targets) -> None:
     CapturingHandler.respond_status = 500
     url = f"http://127.0.0.1:{local_http_server.server_port}/hooks/sentinel"
     adapter = WebhookAdapter()
@@ -96,13 +96,47 @@ def test_webhook_adapter_non_2xx_raises(local_http_server) -> None:
         adapter.create_ticket(_finding_view(), {"url": url}, title="x", body="")
 
 
-def test_webhook_adapter_connection_refused_raises() -> None:
+def test_webhook_adapter_connection_refused_raises(allow_loopback_webhook_targets) -> None:
     # Port 1 is a real, always-unreachable "well known" TCP port for a
     # userland process — a genuine connection failure, not a mock.
     adapter = WebhookAdapter()
     with pytest.raises(IntegrationError, match="Could not reach"):
         adapter.create_ticket(
             _finding_view(), {"url": "http://127.0.0.1:1/hooks"}, title="x", body=""
+        )
+
+
+# ---- WebhookAdapter: SSRF guard (§7.5 hardening) ---------------------------
+
+
+def test_webhook_adapter_rejects_unsupported_scheme() -> None:
+    adapter = WebhookAdapter()
+    with pytest.raises(IntegrationError, match="unsupported URL scheme"):
+        adapter.create_ticket(_finding_view(), {"url": "file:///etc/passwd"}, title="x", body="")
+
+
+def test_webhook_adapter_rejects_loopback_target_by_default() -> None:
+    """Without the test-only bypass fixture, the real guard is live — the
+    exact property that fixture exists to override just for the local-server
+    tests above."""
+    adapter = WebhookAdapter()
+    with pytest.raises(IntegrationError, match="disallowed address"):
+        adapter.create_ticket(_finding_view(), {"url": "http://127.0.0.1:1/hooks"}, title="x", body="")
+
+
+def test_webhook_adapter_rejects_cloud_metadata_style_target(monkeypatch) -> None:
+    """A hostname that resolves to the AWS/GCP/Azure metadata address
+    (169.254.169.254, link-local) must be rejected before any connection is
+    attempted — the concrete "intranet/metadata access" risk the audit
+    flagged for an admin-configured webhook in a public deployment."""
+    monkeypatch.setattr(
+        "socket.getaddrinfo",
+        lambda host, *a, **kw: [(2, 1, 6, "", ("169.254.169.254", 0))],
+    )
+    adapter = WebhookAdapter()
+    with pytest.raises(IntegrationError, match="disallowed address"):
+        adapter.create_ticket(
+            _finding_view(), {"url": "http://internal-service.example/hooks"}, title="x", body=""
         )
 
 
