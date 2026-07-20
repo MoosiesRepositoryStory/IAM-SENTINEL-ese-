@@ -44,9 +44,16 @@ jobs:
     # Independent of `quality` (runs in parallel, not blocked on it) — see
     # tests/e2e/README.md. Needs its own live server + seeded DB + a browser
     # binary, none of which the unit-test job has.
+    #
+    # Plain /tmp path rather than `${{ runner.temp }}`: the `runner` context
+    # isn't available in a job-level `env:` block (only within
+    # `jobs.<id>.steps`), and GitHub rejects the whole workflow file at parse
+    # time if it's referenced here — not a runtime failure, the run never
+    # even gets scheduled (0 jobs). DATABASE_URL is left unset — Settings.
+    # from_env() derives it from DATA_DIR alone (sqlite:///<data_dir>/
+    # sentinel.db), the same thing seed.py/server.py both do locally.
     env:
-      DATA_DIR: ${{ runner.temp }}/e2e-data
-      DATABASE_URL: sqlite:///${{ runner.temp }}/e2e-data/e2e.db
+      DATA_DIR: /tmp/e2e-data
     steps:
       - uses: actions/checkout@v4
 

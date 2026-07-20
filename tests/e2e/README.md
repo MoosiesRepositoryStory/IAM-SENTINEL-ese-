@@ -20,7 +20,6 @@ playwright install chromium
 
 # Terminal 1 — seed a scratch DB, then serve it:
 export DATA_DIR=/tmp/sentinel-e2e
-export DATABASE_URL="sqlite:///$DATA_DIR/e2e.db"
 python tests/e2e/seed.py
 python tests/e2e/server.py 5000
 
@@ -28,10 +27,14 @@ python tests/e2e/server.py 5000
 pytest tests/e2e --base-url=http://127.0.0.1:5000
 ```
 
-`seed.py` and `server.py` must run with the *same* `DATABASE_URL`/`DATA_DIR`
-as each other (two processes sharing one SQLite file in WAL mode — see
-`app/db.py`). Re-running `seed.py` against a non-empty DB just adds another
-account; delete the scratch DB file to start clean.
+`seed.py` and `server.py` must run with the *same* `DATA_DIR` as each other
+(two processes sharing one SQLite file in WAL mode — see `app/db.py`); leave
+`DATABASE_URL` unset and let `Settings.from_env()` derive it from `DATA_DIR`
+alone (`sqlite:///<data_dir>/sentinel.db`) — setting it explicitly yourself
+is easy to get subtly wrong (a manually-built `sqlite:///` URL and a
+platform's own path separator conventions don't always agree). Re-running
+`seed.py` against a non-empty DB just adds another account; delete the
+scratch DB file to start clean.
 
 ## CI wiring
 
