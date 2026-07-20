@@ -49,6 +49,24 @@ All notable changes to this project are documented here. Format follows
   private, link-local, reserved, multicast, and their IPv4-mapped IPv6
   forms), and pins the outbound connection to that validated IP so a second,
   different DNS answer can't be substituted at connect time.
+- `SECRET_KEY` signed both the Flask session cookie and API JWTs, and the
+  dev default was accepted at any startup, including a hypothetical
+  production one. New `JWT_SECRET_KEY` setting (falls back to `SECRET_KEY`
+  when unset, unchanged default behavior) plus `Settings.validate()`, which
+  fails closed when `ENVIRONMENT=production` and either key is still the dev
+  default, too short, or the two are identical.
+- Public-demo hardening: a new `PUBLIC_MODE` setting clamps every capability
+  above `read_only` to always-denied inside `rbac.at_least()` — the single
+  choke point every enforcement path (route decorators, the API's
+  `require_api_role`, and the service-layer `accept-risk`/`connect-account`
+  re-checks) already calls, so turning this on protects all of them at once
+  rather than needing a matching change at each call site.
+- `user_service.update_role()`/`set_active()`'s last-active-admin lockout
+  read the active-admin count and acted on it as two separate steps, with no
+  lock — two concurrent requests could each read "another admin is still
+  active" before either committed and both proceed, leaving zero active
+  admins. Added `_lock_active_admins()`: `BEGIN IMMEDIATE` on SQLite,
+  `SELECT ... FOR UPDATE` on Postgres, run before the count is read.
 
 ### Changed
 - Moved Flask-Login, Flask-WTF, argon2-cffi, email-validator, APScheduler,

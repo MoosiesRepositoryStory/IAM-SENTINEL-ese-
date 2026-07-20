@@ -1,8 +1,8 @@
 """Role-based access control — pure role logic (§10.2, Phase 4 Slice 2).
 
 Three global roles — read_only < analyst < admin, not per-account. This
-module is deliberately dependency-free (stdlib only): it's imported by plain
-service modules (``exception_service``, ``connect_service``) for their
+module only depends on ``app.config`` (itself stdlib-only): it's imported by
+plain service modules (``exception_service``, ``connect_service``) for their
 defense-in-depth re-checks, and those modules must stay importable without
 the ``api`` extra (Flask-Login etc.) installed — the base `iam-sentinel`
 install only pulls in Flask itself, not Flask-Login. The Flask-specific route
@@ -45,13 +45,30 @@ call these functions directly to test unrelated business logic.
 
 from __future__ import annotations
 
+from app.config import get_settings
+
 ROLES: tuple[str, ...] = ("read_only", "analyst", "admin")
 _RANK: dict[str, int] = {role: i + 1 for i, role in enumerate(ROLES)}
 
 
 def at_least(role: str | None, minimum: str) -> bool:
     """Whether ``role`` meets or exceeds ``minimum`` on the read_only < analyst
-    < admin ladder. An unknown/missing role never satisfies anything."""
+    < admin ladder. An unknown/missing role never satisfies anything.
+
+    **Public-mode clamp (docs/ARCHITECTURE_SPEC.md §13.6 hardening):** when
+    ``Settings.public_mode`` is on, any ``minimum`` above ``read_only`` is
+    always denied here, regardless of the caller's actual role — including a
+    genuine admin. This is the one place that check lives: every enforcement
+    point in the app (``app.web.authz.require_role``, ``app.api.auth.
+    require_api_role``, and the internal ``actor_role`` re-checks in
+    ``exception_service``/``connect_service``) calls this function rather
+    than comparing roles itself, so gating public-mode here means all of them
+    inherit it automatically — a future capability or a new API route can't
+    accidentally ship un-clamped by forgetting a check that would otherwise
+    have to be duplicated at each call site. ``read_only`` itself is
+    unaffected (viewing is the entire point of a public deployment)."""
+    if minimum != "read_only" and get_settings().public_mode:
+        return False
     return _RANK.get(role or "", 0) >= _RANK[minimum]
 
 

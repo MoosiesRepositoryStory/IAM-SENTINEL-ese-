@@ -18,7 +18,7 @@ the admin who just made the mistake.
 
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select, text
 from sqlalchemy.orm import Session
 
 from app.models import AppUser, AuditEvent
@@ -32,6 +32,45 @@ class UserError(ValueError):
 
 class LastAdminError(ValueError):
     """Raised when an action would leave zero active admins."""
+
+
+def _active_admin_ids_query() -> Select:
+    return select(AppUser.id).where(AppUser.role == "admin", AppUser.is_active.is_(True))
+
+
+def _lock_active_admins(session: Session) -> None:
+    """Acquire a write-serializing lock covering the active-admin-count check
+    that :func:`update_role`/:func:`set_active` perform next, closing the
+    check-then-act race where two concurrent requests could each read
+    ">=2 active admins" before either commits, and both proceed to remove
+    one — leaving zero admins with nobody left who can fix it.
+
+    Must be the first statement either caller executes on ``session`` (in
+    production it is: ``session_scope()`` hands each request a brand new
+    session). Two dialect-specific mechanisms, per the deploy target:
+
+    - **SQLite** has no row-level locking, so ``BEGIN IMMEDIATE`` grabs the
+      database-wide RESERVED write lock up front — a concurrent request
+      racing the same check blocks (via the driver's busy_timeout) until
+      this transaction commits, instead of both reading a stale, pre-commit
+      admin count and both proceeding. Only sent when this session hasn't
+      already opened a transaction: SQLite can't retroactively upgrade an
+      already-deferred transaction to IMMEDIATE, and re-sending BEGIN inside
+      an open transaction is itself an error. This only matters for tests
+      that share one long-lived session across several prior statements
+      (see test_user_service.py) — those aren't exercising concurrency
+      anyway, so skipping the (already redundant) lock there is harmless.
+    - **Postgres** supports real row locks: ``SELECT ... FOR UPDATE`` over
+      every currently-active admin row makes a concurrent transaction trying
+      to touch the same rows block on the same lock, without serializing
+      unrelated writes elsewhere in the database the way SQLite's
+      database-wide lock does.
+    """
+    if session.get_bind().dialect.name == "sqlite":
+        if not session.in_transaction():
+            session.execute(text("BEGIN IMMEDIATE"))
+    else:
+        session.execute(_active_admin_ids_query().with_for_update())
 
 
 def list_users(session: Session) -> list[AppUser]:
@@ -93,6 +132,7 @@ def create_user(
 def update_role(session: Session, user_id: int, new_role: str, *, actor_id: int | None = None) -> AppUser:
     if new_role not in ROLES:
         raise UserError(f"Invalid role: {new_role!r}")
+    _lock_active_admins(session)
     user = session.get(AppUser, user_id)
     if user is None:
         raise UserError("User not found.")
@@ -121,6 +161,7 @@ def update_role(session: Session, user_id: int, new_role: str, *, actor_id: int 
 
 
 def set_active(session: Session, user_id: int, is_active: bool, *, actor_id: int | None = None) -> AppUser:
+    _lock_active_admins(session)
     user = session.get(AppUser, user_id)
     if user is None:
         raise UserError("User not found.")

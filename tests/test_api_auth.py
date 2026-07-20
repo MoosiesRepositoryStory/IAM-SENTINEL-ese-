@@ -114,7 +114,7 @@ def test_expired_token_rejected(client) -> None:
     with client.application.app_context():
         from flask import current_app
 
-        secret = current_app.config["SECRET_KEY"]
+        secret = current_app.config["JWT_SECRET_KEY"]
     now = datetime.now(UTC)
     expired = jwt.encode(
         {

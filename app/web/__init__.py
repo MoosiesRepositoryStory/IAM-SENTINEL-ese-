@@ -53,7 +53,12 @@ def create_app(*, start_background_jobs: bool = True) -> Flask:
     test's already-torn-down engine across repeated ``create_app()`` calls."""
     app = Flask(__name__, template_folder="templates", static_folder="static")
     settings = get_settings()
+    settings.validate()  # fail closed on insecure defaults when ENVIRONMENT=production
     app.config["SECRET_KEY"] = settings.secret_key
+    # Independent signing key for /api/v1's JWTs (app/api/auth.py) — see
+    # Settings.jwt_secret_key's docstring for why this is deliberately not
+    # just SECRET_KEY again.
+    app.config["JWT_SECRET_KEY"] = settings.jwt_secret_key
     # Session cookie hardening (§10.1): SameSite=Lax is this app's CSRF
     # mitigation for the many htmx mutating POSTs, which carry no per-request
     # token (only the login form does, via Flask-WTF) — a cross-site request
