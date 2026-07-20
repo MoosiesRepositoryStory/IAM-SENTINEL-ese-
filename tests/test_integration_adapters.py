@@ -61,7 +61,9 @@ def test_get_adapter_returns_a_fresh_instance() -> None:
 # ---- WebhookAdapter: real HTTP, not mocked (server fixture in conftest.py) --
 
 
-def test_webhook_adapter_really_posts_json(local_http_server, allow_loopback_webhook_targets) -> None:
+def test_webhook_adapter_really_posts_json(
+    local_http_server, allow_loopback_webhook_targets
+) -> None:
     url = f"http://127.0.0.1:{local_http_server.server_port}/hooks/sentinel"
     adapter = WebhookAdapter()
     ref = adapter.create_ticket(
@@ -121,7 +123,9 @@ def test_webhook_adapter_rejects_loopback_target_by_default() -> None:
     tests above."""
     adapter = WebhookAdapter()
     with pytest.raises(IntegrationError, match="disallowed address"):
-        adapter.create_ticket(_finding_view(), {"url": "http://127.0.0.1:1/hooks"}, title="x", body="")
+        adapter.create_ticket(
+            _finding_view(), {"url": "http://127.0.0.1:1/hooks"}, title="x", body=""
+        )
 
 
 def test_webhook_adapter_rejects_cloud_metadata_style_target(monkeypatch) -> None:

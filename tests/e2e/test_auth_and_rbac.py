@@ -75,9 +75,7 @@ def test_analyst_can_mutate_but_not_accept_risk_or_manage_users(
     assert response is not None and response.status == 403
 
 
-def test_admin_has_full_findings_and_settings_access(
-    page: Page, base_url: str, login_as
-) -> None:
+def test_admin_has_full_findings_and_settings_access(page: Page, base_url: str, login_as) -> None:
     login_as("admin")
     page.goto(f"{base_url}/findings?status=open")
     page.locator("tr[data-group-id]").first.click()

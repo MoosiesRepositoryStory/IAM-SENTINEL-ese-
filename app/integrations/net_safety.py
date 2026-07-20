@@ -54,8 +54,14 @@ def _is_unsafe_address(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> b
     i.e. anything that isn't a routable, public destination. Also unwraps an
     IPv4-mapped IPv6 address (``::ffff:127.0.0.1``) and checks the address it
     actually maps to, since the unsafe target is the same either way."""
-    if addr.is_loopback or addr.is_private or addr.is_link_local or addr.is_reserved \
-            or addr.is_multicast or addr.is_unspecified:
+    if (
+        addr.is_loopback
+        or addr.is_private
+        or addr.is_link_local
+        or addr.is_reserved
+        or addr.is_multicast
+        or addr.is_unspecified
+    ):
         return True
     mapped = getattr(addr, "ipv4_mapped", None)
     return mapped is not None and _is_unsafe_address(mapped)

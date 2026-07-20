@@ -78,7 +78,9 @@ def test_accepts_a_public_looking_resolved_address(monkeypatch) -> None:
     assert resolve_pinned_ip("example.com") == "93.184.216.34"
 
 
-def test_decimal_encoded_loopback_is_caught_via_the_resolved_ip_not_the_hostname_string(monkeypatch) -> None:
+def test_decimal_encoded_loopback_is_caught_via_the_resolved_ip_not_the_hostname_string(
+    monkeypatch,
+) -> None:
     """Regardless of what obfuscated form a hostname/URL used (decimal, hex,
     octal IP encodings), the check inspects what it actually RESOLVES to —
     simulated here by making a plausible-looking hostname resolve to

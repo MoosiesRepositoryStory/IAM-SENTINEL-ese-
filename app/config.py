@@ -76,7 +76,10 @@ class Settings:
         documented insecure defaults unchanged."""
         if self.environment != "production":
             return
-        for name, value in (("SECRET_KEY", self.secret_key), ("JWT_SECRET_KEY", self.jwt_secret_key)):
+        for name, value in (
+            ("SECRET_KEY", self.secret_key),
+            ("JWT_SECRET_KEY", self.jwt_secret_key),
+        ):
             if value == _DEV_SECRET:
                 raise RuntimeError(
                     f"ENVIRONMENT=production but {name} is still the dev default — "
