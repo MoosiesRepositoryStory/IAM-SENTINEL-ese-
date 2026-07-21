@@ -31,10 +31,10 @@
      just the table region and pushes the new URL. -->
 <form id="filterform" class="filterbar"
       hx-get="{{ url_for('web.findings') }}"
-      hx-target="#table-region" hx-swap="innerHTML"
+      hx-target="#table-region" hx-swap="innerHTML settle:200ms"
       hx-push-url="true"
       hx-trigger="change, keyup changed delay:300ms from:input[name=q], sort-changed"
-      hx-indicator="#tbl-spin"
+      hx-indicator="#tbl-spin, #tbl-skeleton"
       onsubmit="return false">
 
   <input type="hidden" name="sort" id="sortField" value="{{ sort_query }}">
@@ -91,14 +91,47 @@
   {% endif %}
 </form>
 
-<div id="table-region">
-  {% include "partials/findings_table.html" %}
+<div class="skeleton-region">
+  <div id="table-region">
+    {% include "partials/findings_table.html" %}
+  </div>
+  {# Shown for exactly the duration of a table-region request (filter change,
+     search, sort, pagination — see hx-indicator on the form + pager buttons
+     below) via the plain .htmx-indicator opacity toggle, same convention as
+     #tbl-spin above. Not a fixed fake delay: a fast response barely shows it. #}
+  <div id="tbl-skeleton" class="skeleton-overlay htmx-indicator" aria-hidden="true">
+    {% for _ in range(7) %}
+    <div class="skel-row skeleton" style="width: {{ [92, 78, 88, 65, 95, 72, 84][loop.index0] }}%"></div>
+    {% endfor %}
+  </div>
 </div>
 
 <!-- Detail drawer mounts here. On a deep link (/findings/<id>) it auto-loads. -->
 <div id="drawer"
      {% if open_group %}hx-get="{{ url_for('web.finding_drawer', group_id=open_group) }}"
-     hx-trigger="load" hx-target="#drawer" hx-swap="innerHTML"{% endif %}></div>
+     hx-trigger="load" hx-target="#drawer" hx-swap="innerHTML settle:200ms"
+     hx-indicator="#drawer-skeleton"{% endif %}></div>
+
+{# Permanent skeleton drawer shape, shown for exactly the duration of any
+   finding-drawer request (row click, context menu, keyboard shortcuts, deep
+   link) via the same .htmx-indicator convention — app.js's openDrawer()
+   toggles it manually for the JS-triggered paths (htmx.ajax has no
+   declarative hx-indicator to hang off of), the row's own hx-get and the
+   deep-link above use the attribute directly. #}
+<div id="drawer-skeleton" class="htmx-indicator" aria-hidden="true">
+  <div class="drawer-backdrop"></div>
+  <div class="drawer-panel">
+    <div class="drawer-head">
+      <div class="skel-line skeleton" style="width: 70%; height: 16px"></div>
+      <div class="skel-line skeleton" style="width: 40%"></div>
+    </div>
+    <div class="drawer-body">
+      {% for w in [90, 60, 80, 50, 85, 70, 95, 55] %}
+      <div class="skel-line skeleton" style="width: {{ w }}%"></div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
 
 <script>
   // Sort/column/drawer/context-menu/palette/keyboard-shortcut logic all lives in

@@ -100,6 +100,18 @@ body {
 
 a { color: inherit; text-decoration: none; }
 
+/* Theme toggle (base.html's Alpine store flips [data-theme] instantly, which
+   recomputes every var()-based color instantly too) — a brief, cheap
+   cross-fade instead of a hard snap. Only background-color/color/border-color
+   (never a blanket `all`), so this never fights a more specific selector's
+   own transition (e.g. .progress-fill's width, .gauge-arc's stroke-dasharray)
+   — a more specific rule simply wins outright for those elements, unaffected.
+   Reduced-motion (bottom of file) disables this globally along with
+   everything else animated in this file. */
+*, *::before, *::after {
+  transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease;
+}
+
 /* ---- Layout shell ---- */
 .app {
   display: grid;
@@ -326,6 +338,56 @@ table.findings { width: 100%; border-collapse: collapse; font-size: 13px; }
 .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { opacity: 1; }
 .spin { display: inline-block; animation: spin 0.7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---- Loading skeletons + swap/settle transitions ----
+   Shown for exactly the duration of the real htmx request via the existing
+   .htmx-indicator/.htmx-request convention above — no fixed fake delay, so a
+   fast response barely shows it and a slow one fills the wait usefully. Uses
+   only existing theme surface colors, so it's correct in both themes with no
+   extra variables. */
+.skeleton {
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--bg-elev-2) 25%, var(--border) 50%, var(--bg-elev-2) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.skel-line { height: 11px; margin: 7px 0; }
+.skel-row { height: 20px; margin: 9px 0; }
+
+/* Overlays sit on an absolutely-positioned layer above the (stale, about to
+   be replaced) real content — using the plain .htmx-indicator opacity toggle
+   above, just scoped to a bigger shape than the small toolbar spinner. */
+.skeleton-region { position: relative; }
+.skeleton-overlay {
+  position: absolute; inset: 0; z-index: 6;
+  background: var(--bg-elev); border-radius: var(--radius);
+  padding: 14px; pointer-events: none;
+}
+/* #drawer-skeleton reuses .drawer-backdrop/.drawer-panel's own (fixed,
+   full-viewport) layout directly rather than .skeleton-overlay above.
+   pointer-events:none is load-bearing here, not cosmetic: opacity:0 alone
+   still blocks clicks underneath (opacity doesn't exempt hit-testing), and
+   this sits over the ENTIRE viewport — if the .htmx-indicator class were
+   ever left on past the real request (a swap that errors before removing
+   it, say), an interactive invisible overlay would silently eat every
+   click app-wide. Always non-interactive; it's decorative either way. */
+#drawer-skeleton { pointer-events: none; }
+
+/* Fade-in for htmx-swapped content: htmx adds .htmx-added to newly-inserted
+   elements and removes it once settled (see each hx-swap="... settle:200ms"
+   below) — defining the pre-settle state here plus a transition on the
+   settled selector makes that removal animate, instead of new content
+   just popping in. (The drawer already had its own enter animation via
+   .drawer-backdrop/.drawer-panel's `animation:` above — unaffected/not
+   duplicated here.) */
+.table-wrap.htmx-added { opacity: 0; }
+.table-wrap { transition: opacity 200ms cubic-bezier(.2, .7, .3, 1); }
+#palette-results > *.htmx-added { opacity: 0; }
+#palette-results > * { transition: opacity 180ms cubic-bezier(.2, .7, .3, 1); }
 
 /* ---- Detail drawer (§8.8) ---- */
 .drawer-backdrop {
@@ -1008,3 +1070,20 @@ tr.run-highlight:hover { background: var(--accent-soft); }
   color: var(--sev-low); border-radius: 8px; padding: 8px 11px; font-size: 12.5px; margin-bottom: 14px;
 }
 #schedule-run-info { color: var(--text-faint); line-height: 1.6; }
+
+/* Respect the OS-level motion preference — overrides every animation/
+   transition declared in this file (skeleton shimmer, table/palette
+   fade-in, theme-toggle cross-fade, drawer fade/slide-in, progress-fill,
+   gauge-arc, the spinner, etc.) in one place rather than gating each one
+   individually. Near-zero rather than exactly 0 so transitionend/
+   animationend still fire (some browsers never fire them for a literal
+   0-duration transition), which matters for anything that might listen for
+   those events. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -28,12 +28,14 @@
       <div class="pager">
         <button {{ 'disabled' if result.page <= 1 }}
                 hx-get="{{ url_for('web.findings', page=result.page - 1) }}"
-                hx-include="#filterform" hx-target="#table-region" hx-swap="innerHTML"
+                hx-include="#filterform" hx-target="#table-region" hx-swap="innerHTML settle:200ms"
+                hx-indicator="#tbl-spin, #tbl-skeleton"
                 hx-push-url="true">‹ Prev</button>
         <span>{{ result.page }} / {{ result.pages }}</span>
         <button {{ 'disabled' if result.page >= result.pages }}
                 hx-get="{{ url_for('web.findings', page=result.page + 1) }}"
-                hx-include="#filterform" hx-target="#table-region" hx-swap="innerHTML"
+                hx-include="#filterform" hx-target="#table-region" hx-swap="innerHTML settle:200ms"
+                hx-indicator="#tbl-spin, #tbl-skeleton"
                 hx-push-url="true">Next ›</button>
       </div>
       {% endif %}
@@ -79,7 +81,8 @@
     <tbody>
       {% for f in result.rows %}
       <tr hx-get="{{ url_for('web.finding_drawer', group_id=f.group_id) }}"
-          hx-target="#drawer" hx-swap="innerHTML" hx-push-url="true"
+          hx-target="#drawer" hx-swap="innerHTML settle:200ms" hx-push-url="true"
+          hx-indicator="#drawer-skeleton"
           data-group-id="{{ f.group_id }}" data-status="{{ f.status }}"
           data-actions='{{ available_actions(f.status, current_user.role) | tojson }}'
           data-finding='{{ {

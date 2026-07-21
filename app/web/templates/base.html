@@ -88,11 +88,19 @@
              placeholder="Type a command or search findings…"
              oninput="Sentinel.onPaletteInput(event)"
              hx-get="{{ url_for('web.palette_search') }}" hx-trigger="keyup changed delay:200ms"
-             hx-target="#palette-results" hx-swap="innerHTML" hx-include="this">
+             hx-target="#palette-results" hx-swap="innerHTML settle:180ms" hx-include="this"
+             hx-indicator="#palette-skeleton">
     </label>
-    <div id="palette-list" class="palette-list">
+    <div id="palette-list" class="palette-list skeleton-region">
       <div id="palette-static"></div>
       <div id="palette-results"></div>
+      {# Shown for exactly the duration of the live search-as-you-type
+         request (same .htmx-indicator convention as the findings table). #}
+      <div id="palette-skeleton" class="skeleton-overlay htmx-indicator" aria-hidden="true">
+        <div class="skel-line skeleton" style="width: 55%"></div>
+        <div class="skel-row skeleton" style="width: 92%"></div>
+        <div class="skel-row skeleton" style="width: 80%"></div>
+      </div>
     </div>
     <div class="palette-foot">↑↓ navigate · Enter select · Esc close</div>
   </div>

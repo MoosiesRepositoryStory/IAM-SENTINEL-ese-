@@ -6,7 +6,8 @@
 {% for f in rows %}
 <div class="palette-item" role="option" tabindex="-1"
      hx-get="{{ url_for('web.finding_drawer', group_id=f.group_id) }}"
-     hx-target="#drawer" hx-swap="innerHTML" hx-push-url="true"
+     hx-target="#drawer" hx-swap="innerHTML settle:200ms" hx-push-url="true"
+     hx-indicator="#drawer-skeleton"
      onclick="Sentinel.closePalette()">
   <span class="pi-ico">◈</span>
   <span class="pi-label">{{ f.title }}</span>

@@ -177,7 +177,15 @@ window.Sentinel = (function () {
     if (opts.tab) qs.push('tab=' + encodeURIComponent(opts.tab));
     if (opts.action) qs.push('action=' + encodeURIComponent(opts.action));
     if (qs.length) url += '?' + qs.join('&');
-    htmx.ajax('GET', url, { target: '#drawer', swap: 'innerHTML' });
+    // This JS-triggered path (context menu, keyboard shortcuts, next/prev
+    // stepping) has no declarative hx-get to hang an hx-indicator off of —
+    // htmx.ajax's context object has no equivalent option — so toggle the
+    // skeleton manually. htmx.ajax returns a promise that resolves once the
+    // swap+settle finishes, same lifecycle point hx-indicator itself uses.
+    const skeleton = document.getElementById('drawer-skeleton');
+    if (skeleton) skeleton.classList.add('htmx-request');
+    const req = htmx.ajax('GET', url, { target: '#drawer', swap: 'innerHTML settle:200ms' });
+    if (skeleton && req && req.finally) req.finally(() => skeleton.classList.remove('htmx-request'));
   }
   function drawerGroupId() {
     const panel = document.querySelector('.drawer-panel');
