@@ -55,11 +55,29 @@
   <header class="topbar">
     <div class="crumb">{% block crumb %}<b>Findings</b>{% endblock %}</div>
     <div class="topbar-right">
-      <button class="icon-btn" title="Command palette (⌘K)" aria-label="Command palette"
+      <button class="icon-btn" data-tour="palette" title="Command palette (⌘K)" aria-label="Command palette"
               onclick="Sentinel.openPalette()">⌘</button>
-      <button class="icon-btn" @click="toggle()" :title="mode === 'dark' ? 'Switch to light' : 'Switch to dark'" aria-label="Toggle theme">
-        <span x-text="mode === 'dark' ? '☀' : '☾'"></span>
-      </button>
+      {# One consolidated top-right menu (theme toggle + guided tour + room for
+         future options) rather than a row of competing icon buttons. Alpine,
+         reusing the same theme store the <html> element carries — a nested
+         x-data still reads the ancestor's `mode`/`toggle`. The 't' keyboard
+         shortcut still toggles theme directly (app.js toggleTheme() reaches
+         the store on <html>), independent of this button's location. #}
+      <div class="topbar-menu" x-data="{ open: false }"
+           @keydown.escape="open = false" @click.outside="open = false">
+        <button class="icon-btn" data-tour="menu" @click="open = !open"
+                :aria-expanded="open ? 'true' : 'false'" aria-haspopup="true" aria-label="Menu">⚙</button>
+        <div class="menu-dropdown" x-show="open" x-cloak role="menu">
+          <button class="menu-row" role="menuitem" @click="toggle()">
+            <span class="menu-ico" x-text="mode === 'dark' ? '☀' : '☾'"></span>
+            <span x-text="mode === 'dark' ? 'Light mode' : 'Dark mode'"></span>
+          </button>
+          <button class="menu-row" role="menuitem" @click="open = false; Sentinel.startTour()">
+            <span class="menu-ico">🧭</span>
+            <span>Start tutorial</span>
+          </button>
+        </div>
+      </div>
       {% if current_user.is_authenticated %}
       <div class="user-chip" title="{{ current_user.email }} · {{ current_user.role | replace('_', ' ') | capitalize }}">
         <a class="user-chip-name" href="{{ url_for('web.profile') }}">{{ current_user.display_name }}</a>

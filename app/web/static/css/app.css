@@ -1107,6 +1107,61 @@ tr.run-highlight:hover { background: var(--accent-soft); }
 }
 #schedule-run-info { color: var(--text-faint); line-height: 1.6; }
 
+/* ---- Top-right consolidated menu (theme toggle + guided tour) ---- */
+.topbar-menu { position: relative; display: inline-flex; }
+.menu-dropdown {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 50;
+  min-width: 184px; padding: 6px;
+  background: var(--bg-elev-2); border: 1px solid var(--border-strong);
+  border-radius: 10px; box-shadow: var(--shadow);
+}
+.menu-row {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 8px 10px; border-radius: 7px; border: none; background: none;
+  color: var(--text); font: inherit; font-size: 13px; cursor: pointer; text-align: left;
+}
+.menu-row:hover, .menu-row:focus-visible { background: var(--row-hover); outline: none; }
+.menu-ico { width: 16px; text-align: center; flex: none; }
+
+/* ---- Guided tour (manual only; launched from the menu above) ----
+   Spotlight = one element positioned over the target whose huge box-shadow
+   dims everything ELSE (the target rect stays a transparent "hole"); it's
+   pointer-events:none, so it's purely visual. A separate transparent
+   backdrop underneath it catches every click (-> end tour), including
+   clicks that fall on the spotlighted element, so the tour never lets you
+   half-interact with the page beneath it. On end, all three nodes are
+   removed from the DOM outright (see Sentinel.endTour) — nothing lingers to
+   intercept clicks, the failure mode the drawer-skeleton overlay had. The
+   position transitions below are covered by the global reduced-motion
+   override at the end of this file (they use the same `*` transition reset). */
+.tour-backdrop { position: fixed; inset: 0; z-index: 1000; background: transparent; }
+.tour-backdrop--dim { background: rgba(4, 7, 12, 0.6); }
+.tour-spotlight {
+  position: fixed; z-index: 1001; pointer-events: none; border-radius: 8px;
+  box-shadow: 0 0 0 3px var(--accent), 0 0 0 100vmax rgba(4, 7, 12, 0.6);
+  transition: top .25s ease, left .25s ease, width .25s ease, height .25s ease;
+}
+.tour-tooltip {
+  position: fixed; z-index: 1002; width: min(340px, calc(100vw - 24px));
+  background: var(--bg-elev); border: 1px solid var(--border-strong);
+  border-radius: 12px; box-shadow: var(--shadow); padding: 16px 18px;
+  transition: top .2s ease, left .2s ease;
+}
+.tour-tooltip--centered {
+  top: 50% !important; left: 50% !important; transform: translate(-50%, -50%);
+}
+.tour-tip-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.tour-step-count { font-size: 11px; color: var(--text-faint); letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+.tour-x {
+  background: none; border: none; color: var(--text-muted);
+  font-size: 14px; cursor: pointer; padding: 2px 7px; border-radius: 6px; line-height: 1;
+}
+.tour-x:hover, .tour-x:focus-visible { color: var(--text); background: var(--bg-elev-2); outline: none; }
+.tour-tip-title { font-size: 15px; font-weight: 650; margin: 0 0 6px; }
+.tour-tip-body { font-size: 13px; line-height: 1.55; color: var(--text-muted); margin: 0 0 14px; }
+.tour-tip-controls { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.tour-nav { display: flex; gap: 8px; }
+
 /* Respect the OS-level motion preference — overrides every animation/
    transition declared in this file (skeleton shimmer, table/palette
    fade-in, theme-toggle cross-fade, drawer fade/slide-in, progress-fill,

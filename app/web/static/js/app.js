@@ -739,6 +739,10 @@ window.Sentinel = (function () {
   }
 
   function onKeydown(evt) {
+    // While the guided tour is active it owns the keyboard entirely (its own
+    // handler drives Escape / arrows / the focus-trap Tab) — bail before any
+    // app shortcut (j/k/x/e/i/s/a/c, Cmd+K, etc.) can fire behind the backdrop.
+    if (tourActive) return;
     const editing = isEditableTarget(document.activeElement);
     const paletteIsOpen = paletteEl() && paletteEl().style.display === 'flex';
 
@@ -891,6 +895,207 @@ window.Sentinel = (function () {
     form.submit();
   }
 
+  // ------------------------------------------------------- guided tour (§UX) --
+  // Manual only — launched from the top-right menu's "Start tutorial", never
+  // automatically (an auto-launched tour would appear mid-E2E-test and
+  // intercept clicks meant for the real UI). Vanilla JS + CSS, no new
+  // dependency: the spotlight is one box-shadow element (see .tour-* in
+  // app.css). Steps anchor to real elements; any step whose anchor isn't on
+  // the current page is dropped at start, so the tour never points at
+  // nothing (the drawer + graph are described in copy rather than navigated
+  // to, keeping it a single-page tour with no fragile mid-tour navigation).
+  const TOUR_DEFS = [
+    { centered: true, title: 'Welcome to IAM Sentinel',
+      body: 'A quick tour of the main views. Use Next and Back, or press Escape any time to leave.' },
+    { selector: '.sidebar', title: 'Navigation',
+      body: 'Move between Findings, the blast-radius Graph, Compliance, the Checks catalog, Runs, and cloud Accounts.' },
+    { selector: '.filterbar', title: 'Search and filter',
+      body: 'Search by title or principal and filter by severity, status, or category. The full view state lives in the URL, so any filtered view is shareable.' },
+    { selector: '#table-region .table-wrap', title: 'Findings',
+      body: 'Every finding from the latest scan. Click a row to open its detail drawer — evidence, a suggested least-privilege fix, and the full workflow (assign, comment, suppress, accept risk).' },
+    { selector: '[data-tour="palette"]', title: 'Command palette',
+      body: 'Press Cmd/Ctrl + K anywhere to jump to a finding or run a command. The search is typo-tolerant — a misspelling still surfaces close matches.' },
+    { selector: '[data-tour="menu"]', title: 'Settings and this tour',
+      body: 'Switch between light and dark mode, and re-launch this tour whenever you like, right here.' },
+    { centered: true, title: "You're all set",
+      body: 'Head to the Graph view to see escalation paths, or Compliance for CIS / SOC 2 / NIST coverage. Enjoy.' },
+  ];
+
+  let tourActive = false;
+  let tourStep = 0;
+  let tourSteps = [];
+  let tourEls = null;
+  let tourPrevFocus = null;
+  let tourCurrentEl = null;
+
+  function startTour() {
+    if (tourActive) return;
+    // Clear transient overlays so the tour isn't stacked on top of them.
+    closePalette();
+    if (document.getElementById('ctx-menu')) closeContextMenu();
+    if (drawerOpen()) closeDrawer();
+
+    // Keep only steps whose anchor actually exists right now (centered steps
+    // are always kept) — a guarantee the positioning code can rely on.
+    tourSteps = TOUR_DEFS.filter((s) => s.centered || document.querySelector(s.selector));
+    if (!tourSteps.length) return;
+
+    tourActive = true;
+    tourStep = 0;
+    tourPrevFocus = document.activeElement;
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'tour-backdrop';
+    backdrop.addEventListener('click', endTour); // clicking the backdrop exits
+    const spotlight = document.createElement('div');
+    spotlight.className = 'tour-spotlight';
+    const tip = document.createElement('div');
+    tip.className = 'tour-tooltip';
+    tip.setAttribute('role', 'dialog');
+    tip.setAttribute('aria-modal', 'true');
+    tip.setAttribute('aria-labelledby', 'tour-title');
+    document.body.appendChild(backdrop);
+    document.body.appendChild(spotlight);
+    document.body.appendChild(tip);
+    tourEls = { backdrop, spotlight, tip };
+
+    document.addEventListener('keydown', tourKeydown, true);
+    window.addEventListener('resize', tourReposition);
+    renderTourStep();
+  }
+
+  function endTour() {
+    if (!tourActive) return;
+    tourActive = false;
+    document.removeEventListener('keydown', tourKeydown, true);
+    window.removeEventListener('resize', tourReposition);
+    if (tourEls) {
+      // Remove every node outright — nothing left behind to intercept clicks.
+      tourEls.backdrop.remove();
+      tourEls.spotlight.remove();
+      tourEls.tip.remove();
+      tourEls = null;
+    }
+    tourCurrentEl = null;
+    if (tourPrevFocus && typeof tourPrevFocus.focus === 'function') {
+      try { tourPrevFocus.focus(); } catch (e) { /* element may be gone/hidden */ }
+    }
+    tourPrevFocus = null;
+  }
+
+  function tourNext() {
+    if (!tourActive) return;
+    if (tourStep >= tourSteps.length - 1) { endTour(); return; }
+    tourStep += 1;
+    renderTourStep();
+  }
+  function tourBack() {
+    if (!tourActive || tourStep === 0) return;
+    tourStep -= 1;
+    renderTourStep();
+  }
+
+  function renderTourStep() {
+    const step = tourSteps[tourStep];
+    const { backdrop, spotlight, tip } = tourEls;
+    const isFirst = tourStep === 0;
+    const isLast = tourStep === tourSteps.length - 1;
+
+    tip.innerHTML =
+      '<div class="tour-tip-head">' +
+        '<span class="tour-step-count"></span>' +
+        '<button type="button" class="tour-x" aria-label="End tour">✕</button>' +
+      '</div>' +
+      '<h3 id="tour-title" class="tour-tip-title"></h3>' +
+      '<p class="tour-tip-body"></p>' +
+      '<div class="tour-tip-controls">' +
+        '<button type="button" class="btn ghost tiny tour-skip">Skip tour</button>' +
+        '<div class="tour-nav">' +
+          '<button type="button" class="btn ghost tiny tour-back"' + (isFirst ? ' disabled' : '') + '>Back</button>' +
+          '<button type="button" class="btn primary tiny tour-next"></button>' +
+        '</div>' +
+      '</div>';
+    // textContent (not innerHTML) for anything derived from step copy.
+    tip.querySelector('.tour-step-count').textContent = (tourStep + 1) + ' / ' + tourSteps.length;
+    tip.querySelector('.tour-tip-title').textContent = step.title;
+    tip.querySelector('.tour-tip-body').textContent = step.body;
+    tip.querySelector('.tour-next').textContent = isLast ? 'Done' : 'Next';
+    tip.querySelector('.tour-x').addEventListener('click', endTour);
+    tip.querySelector('.tour-skip').addEventListener('click', endTour);
+    tip.querySelector('.tour-back').addEventListener('click', tourBack);
+    tip.querySelector('.tour-next').addEventListener('click', tourNext);
+
+    if (step.centered || !step.selector) {
+      tourCurrentEl = null;
+      backdrop.classList.add('tour-backdrop--dim');
+      spotlight.style.display = 'none';
+      tip.classList.add('tour-tooltip--centered');
+      tip.style.top = '';
+      tip.style.left = '';
+    } else {
+      const el = document.querySelector(step.selector);
+      if (!el) { tourNext(); return; } // guarded at start, but stay safe
+      tourCurrentEl = el;
+      backdrop.classList.remove('tour-backdrop--dim');
+      spotlight.style.display = '';
+      tip.classList.remove('tour-tooltip--centered');
+      el.scrollIntoView({ block: 'center', inline: 'nearest' });
+      // Measure after the scroll settles + the new tooltip content lays out.
+      window.requestAnimationFrame(() => positionTourFor(el));
+    }
+
+    // Focus trapped inside the tooltip: seed it on the primary action.
+    const focusTarget = tip.querySelector('.tour-next') || tip.querySelector('.tour-x');
+    if (focusTarget) focusTarget.focus();
+  }
+
+  function positionTourFor(el) {
+    if (!tourActive || !tourEls) return;
+    const { spotlight, tip } = tourEls;
+    const r = el.getBoundingClientRect();
+    const pad = 6;
+    spotlight.style.top = (r.top - pad) + 'px';
+    spotlight.style.left = (r.left - pad) + 'px';
+    spotlight.style.width = (r.width + pad * 2) + 'px';
+    spotlight.style.height = (r.height + pad * 2) + 'px';
+
+    const tipR = tip.getBoundingClientRect();
+    const gap = 14;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let top = r.bottom + gap;
+    if (top + tipR.height > vh - 12) {
+      const above = r.top - gap - tipR.height;
+      top = above >= 12 ? above : Math.max(12, (vh - tipR.height) / 2);
+    }
+    let left = Math.min(Math.max(12, r.left), vw - tipR.width - 12);
+    tip.style.top = top + 'px';
+    tip.style.left = left + 'px';
+  }
+
+  function tourReposition() {
+    if (tourActive && tourCurrentEl) positionTourFor(tourCurrentEl);
+  }
+
+  function tourKeydown(evt) {
+    if (!tourActive) return;
+    if (evt.key === 'Escape') { evt.preventDefault(); endTour(); return; }
+    if (evt.key === 'ArrowRight') { evt.preventDefault(); tourNext(); return; }
+    if (evt.key === 'ArrowLeft') { evt.preventDefault(); tourBack(); return; }
+    if (evt.key === 'Tab') {
+      // Trap focus within the tooltip's own controls so Tab can't reach the
+      // dimmed page behind the backdrop.
+      const btns = Array.from(tourEls.tip.querySelectorAll('button:not([disabled])'));
+      if (!btns.length) return;
+      const first = btns[0];
+      const last = btns[btns.length - 1];
+      const active = document.activeElement;
+      if (!tourEls.tip.contains(active)) { evt.preventDefault(); first.focus(); }
+      else if (evt.shiftKey && active === first) { evt.preventDefault(); last.focus(); }
+      else if (!evt.shiftKey && active === last) { evt.preventDefault(); first.focus(); }
+    }
+  }
+
   // -------------------------------------------------------------------- init --
   function init() {
     document.addEventListener('keydown', onKeydown);
@@ -938,6 +1143,7 @@ window.Sentinel = (function () {
     onRowContextMenu, onMenuButtonClick, closeContextMenu,
     openPalette, closePalette, togglePalette, onPaletteInput,
     toggleCheatsheet, toast, copyValue,
+    startTour, endTour,
     openScheduleModal, closeScheduleModal, deleteScheduleFromModal, runScheduleNowFromModal,
   };
 })();
