@@ -10,11 +10,18 @@
 ![python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
+> **▶ Live demo — [iam-sentinel.onrender.com](https://iam-sentinel.onrender.com)**
+> Sign in with `admin@example.com` / `iam-sentinel-demo` (analyst and read-only
+> demo accounts are listed on the login page). It runs on a free instance that
+> sleeps when idle, so the first request after a while cold-starts in ~30–60s.
+> The simulated "Acme Corp" AWS org is already scanned, so findings, the
+> blast-radius graph, and the compliance dashboard are populated on arrival.
+
 > **Build status:** Phases 0–4 complete — analysis engine, findings workflow,
 > simulated-cloud ingestion, blast-radius graph, least-privilege engine,
 > compliance dashboard, auth/RBAC, JSON API, and ticket/webhook integrations
-> are all built and tested. Phase 5 (Docker one-command demo, CI polish, live
-> deploy) is in progress. See [the roadmap](#roadmap).
+> are all built and tested. Phase 5 — Docker one-command demo, CI polish, docs,
+> and the live deploy above — is done. See [the roadmap](#roadmap).
 
 ---
 
@@ -147,7 +154,7 @@ excluded from the measured scope) — current coverage is ~92%.
 | 2 ✅ | Simulated cloud ingestion + scheduling + diff |
 | 3 ✅ | Blast-radius graph + least-privilege + compliance dashboard |
 | 4 ✅ | JSON API, auth/RBAC, ticket integrations |
-| 5 (in progress) | Docker one-command demo, CI badges, docs, deploy |
+| 5 ✅ | Docker one-command demo, CI badges, docs, live deploy |
 
 See [CHANGELOG.md](CHANGELOG.md) for what shipped in each phase/slice.
 
