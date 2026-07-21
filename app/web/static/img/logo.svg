@@ -1,0 +1,31 @@
+<svg viewBox="0 0 680 680" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<radialGradient id="steelBg" cx="35%" cy="30%" r="75%">
+<stop offset="0%" stop-color="#eef2f4"/>
+<stop offset="35%" stop-color="#b9c5cd"/>
+<stop offset="70%" stop-color="#69767f"/>
+<stop offset="100%" stop-color="#333d44"/>
+</radialGradient>
+<linearGradient id="steelRim" x1="0%" y1="0%" x2="100%" y2="100%">
+<stop offset="0%" stop-color="#f4f7f8"/>
+<stop offset="45%" stop-color="#98a5ae"/>
+<stop offset="100%" stop-color="#454f57"/>
+</linearGradient>
+<linearGradient id="shieldBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+<stop offset="0%" stop-color="#5a9aee"/>
+<stop offset="50%" stop-color="#2563c9"/>
+<stop offset="100%" stop-color="#123361"/>
+</linearGradient>
+<linearGradient id="sheen" x1="0%" y1="0%" x2="100%" y2="100%">
+<stop offset="0%" stop-color="#ffffff" stop-opacity="0.4"/>
+<stop offset="55%" stop-color="#ffffff" stop-opacity="0"/>
+</linearGradient>
+</defs>
+<circle cx="340" cy="340" r="320" fill="url(#steelBg)"/>
+<circle cx="340" cy="340" r="320" fill="none" stroke="#2b333a" stroke-width="4" opacity="0.5"/>
+<ellipse cx="250" cy="220" rx="280" ry="150" fill="url(#sheen)" transform="rotate(-25 340 340)"/>
+<path d="M340,150 L466,200 L466,344 C466,442 405,508 340,540 C275,508 214,442 214,344 L214,200 Z" fill="url(#steelRim)"/>
+<path d="M340,178 L442,222 L442,340 C442,428 390,486 340,512 C290,486 238,428 238,340 L238,222 Z" fill="url(#shieldBlue)"/>
+<circle cx="340" cy="326" r="34" fill="#e9f1fb" opacity="0.95"/>
+<path d="M320,352 L320,398 L360,398 L360,352 Z" fill="#e9f1fb" opacity="0.95"/>
+</svg>

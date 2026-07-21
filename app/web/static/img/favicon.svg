@@ -1,0 +1,23 @@
+<svg viewBox="140 145 400 400" xmlns="http://www.w3.org/2000/svg">
+<!-- Simplified brand mark for the browser tab: the full logo.svg (steel
+     plate + sheen + shield) turns to mush at 16px, so the favicon drops the
+     plate and keeps just the blue shield silhouette + keyhole in a tight
+     viewBox. Vector, so it stays crisp at any DPI while matching the raster
+     favicon-16/32/48.png + favicon.ico rendered from this same mark. -->
+<defs>
+<linearGradient id="steelRim" x1="0%" y1="0%" x2="100%" y2="100%">
+<stop offset="0%" stop-color="#f4f7f8"/>
+<stop offset="45%" stop-color="#98a5ae"/>
+<stop offset="100%" stop-color="#454f57"/>
+</linearGradient>
+<linearGradient id="shieldBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+<stop offset="0%" stop-color="#5a9aee"/>
+<stop offset="50%" stop-color="#2563c9"/>
+<stop offset="100%" stop-color="#123361"/>
+</linearGradient>
+</defs>
+<path d="M340,150 L466,200 L466,344 C466,442 405,508 340,540 C275,508 214,442 214,344 L214,200 Z" fill="url(#steelRim)"/>
+<path d="M340,178 L442,222 L442,340 C442,428 390,486 340,512 C290,486 238,428 238,340 L238,222 Z" fill="url(#shieldBlue)"/>
+<circle cx="340" cy="326" r="40" fill="#e9f1fb"/>
+<path d="M317,354 L317,404 L363,404 L363,354 Z" fill="#e9f1fb"/>
+</svg>
