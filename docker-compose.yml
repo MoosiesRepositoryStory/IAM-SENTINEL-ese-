@@ -33,9 +33,10 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql+psycopg://sentinel:sentinel@db:5432/sentinel
-      # Dev-only defaults — a real deployment (see README's "Deploy" section)
-      # sets its own SECRET_KEY/JWT_SECRET_KEY and ENVIRONMENT=production,
-      # which makes Settings.validate() fail closed on values this weak.
+      # Dev-only defaults — a real deployment (the hosted one is linked from
+      # README's "Live demo" callout) sets its own SECRET_KEY/JWT_SECRET_KEY and
+      # ENVIRONMENT=production, which makes Settings.validate() fail closed on
+      # values this weak.
       SECRET_KEY: dev-insecure-change-me
       ENVIRONMENT: development
     ports:

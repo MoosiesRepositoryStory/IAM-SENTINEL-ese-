@@ -40,7 +40,29 @@ def init_engine(settings: Settings | None = None) -> Engine:
     connect_args = (
         {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
     )
-    _engine = create_engine(settings.database_url, future=True, connect_args=connect_args)
+    # pool_pre_ping: liveness-check a pooled connection before handing it out,
+    # transparently reconnecting a dead one. Required for the live deploy's Neon
+    # Postgres, whose free tier autosuspends the compute after ~5 min idle and
+    # drops its connections — without this, the first request after an idle gap
+    # (the process can stay warm on DB-free /healthz pings while Neon sleeps)
+    # gets a stale connection and 500s. Harmless no-op on SQLite. Neon's own
+    # documented recommendation.
+    #
+    # Connection topology note: the deploy uses Neon's DIRECT (unpooled)
+    # endpoint, correct at today's single Render instance running gunicorn with
+    # 1 worker / 4 threads (~<=5 connections, far under the direct-endpoint cap).
+    # If concurrency is ever scaled up (more workers/threads, OR Render
+    # autoscale / multiple instances), those direct connections multiply and can
+    # exhaust the cap — switch to Neon's POOLED endpoint at that point AND handle
+    # psycopg3+PgBouncer prepared-statement compatibility. Autoscale must stay
+    # OFF regardless: app/scheduler.py's in-process APScheduler assumes ONE
+    # process, so N instances would N-fire every scheduled scan.
+    _engine = create_engine(
+        settings.database_url,
+        future=True,
+        connect_args=connect_args,
+        pool_pre_ping=True,
+    )
     if settings.database_url.startswith("sqlite"):
         _configure_sqlite(_engine)
     _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False, future=True)

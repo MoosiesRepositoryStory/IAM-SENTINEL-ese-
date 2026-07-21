@@ -49,12 +49,18 @@ A few things are intentional, documented behaviors rather than
 vulnerabilities:
 
 - **The public-demo posture** hands out a *shared* seeded admin login for
-  recruiter convenience. Several hardening measures exist precisely because
-  "admin-configured" can't be fully trusted in that mode — e.g. the outbound
-  SSRF guard on the webhook integration
-  (`app/integrations/net_safety.py`) and `PUBLIC_MODE`, which clamps every
-  capability above `read_only` (`app/services/rbac.py`). A shared demo admin
-  being able to do demo-admin things is by design.
+  recruiter convenience. The hosted demo runs **intentionally interactive** —
+  `PUBLIC_MODE` is **off**, so that shared admin keeps full admin capabilities
+  and visitors can exercise the real workflow (connect, scan, transition,
+  suppress, assign). That is a deliberate, low-risk choice: all data is
+  simulated (moto-backed), the app holds no real credentials, and nothing an
+  admin can reach exposes a real secret. A shared demo admin being able to do
+  demo-admin things is by design. Hardening that stays on regardless because
+  "admin-configured" can't be fully trusted with a public login: the outbound
+  SSRF guard on the webhook integration (`app/integrations/net_safety.py`). The
+  `PUBLIC_MODE` switch (`app/services/rbac.py`) — which clamps every capability
+  above `read_only` — remains available for any deployment that wants a
+  strictly read-only public demo instead.
 - **The dev/demo defaults are deliberately insecure** (`SECRET_KEY=dev-…`,
   SQLite, no TLS). Setting `ENVIRONMENT=production` makes `Settings.validate()`
   fail closed on weak or shared signing keys — see `app/config.py`. Reports

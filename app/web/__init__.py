@@ -66,6 +66,13 @@ def create_app(*, start_background_jobs: bool = True) -> Flask:
     # safe without threading a token through every htmx form.
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     app.config["SESSION_COOKIE_HTTPONLY"] = True
+    # Cap request bodies at 8 MB. The only sizeable input is the Connect
+    # wizard's inventory/policies/logs upload, which views._uploaded_text()
+    # reads fully into memory — legitimate ones are tiny (KBs). Without a cap,
+    # the shared-admin public demo (PUBLIC_MODE off, so any visitor with the
+    # published demo password can reach the upload) could POST a multi-GB body
+    # and OOM the small free-tier instance. Flask returns 413 past this.
+    app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
     # Canonical host, when configured (PUBLIC_BASE_URL): pins SERVER_NAME /
     # PREFERRED_URL_SCHEME so url_for(_external=True) — used for the
     # ticket-notification deep link sent to external integrations, see
