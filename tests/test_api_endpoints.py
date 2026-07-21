@@ -57,8 +57,10 @@ def _seed(db_session) -> dict:  # noqa: ANN001
     ).first()
     assert group_id is not None and principal_uid is not None
     return {
-        "account_id": account.id, "run_id": run.id,
-        "group_id": group_id, "principal_uid": principal_uid,
+        "account_id": account.id,
+        "run_id": run.id,
+        "group_id": group_id,
+        "principal_uid": principal_uid,
     }
 
 
@@ -315,8 +317,13 @@ def test_list_checks_after_scan_has_finding_counts(client, db_session) -> None:
 
 
 _ALL_GET_PATHS = [
-    "/api/v1/me", "/api/v1/accounts", "/api/v1/runs", "/api/v1/findings",
-    "/api/v1/principals", "/api/v1/compliance", "/api/v1/checks",
+    "/api/v1/me",
+    "/api/v1/accounts",
+    "/api/v1/runs",
+    "/api/v1/findings",
+    "/api/v1/principals",
+    "/api/v1/compliance",
+    "/api/v1/checks",
 ]
 
 

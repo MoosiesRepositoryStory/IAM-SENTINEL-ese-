@@ -82,7 +82,9 @@ def active_admin_count(session: Session, *, excluding: int | None = None) -> int
     as the lockout check itself (``excluding`` the user about to be
     demoted/deactivated: would that leave zero?) and by the settings_users
     view to decide whether to disable that one row's controls."""
-    stmt = select(func.count(AppUser.id)).where(AppUser.role == "admin", AppUser.is_active.is_(True))
+    stmt = select(func.count(AppUser.id)).where(
+        AppUser.role == "admin", AppUser.is_active.is_(True)
+    )
     if excluding is not None:
         stmt = stmt.where(AppUser.id != excluding)
     return session.scalar(stmt) or 0
@@ -129,7 +131,9 @@ def create_user(
     return user
 
 
-def update_role(session: Session, user_id: int, new_role: str, *, actor_id: int | None = None) -> AppUser:
+def update_role(
+    session: Session, user_id: int, new_role: str, *, actor_id: int | None = None
+) -> AppUser:
     if new_role not in ROLES:
         raise UserError(f"Invalid role: {new_role!r}")
     _lock_active_admins(session)
@@ -160,7 +164,9 @@ def update_role(session: Session, user_id: int, new_role: str, *, actor_id: int 
     return user
 
 
-def set_active(session: Session, user_id: int, is_active: bool, *, actor_id: int | None = None) -> AppUser:
+def set_active(
+    session: Session, user_id: int, is_active: bool, *, actor_id: int | None = None
+) -> AppUser:
     _lock_active_admins(session)
     user = session.get(AppUser, user_id)
     if user is None:

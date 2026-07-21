@@ -1,4 +1,4 @@
-""""Create ticket" orchestration (§7.5, Phase 4 Slice 5): resolves the chosen
+""" "Create ticket" orchestration (§7.5, Phase 4 Slice 5): resolves the chosen
 ``IntegrationTarget``, builds the adapter-facing ``FindingView``, calls the
 right adapter (via ``app.integrations.registry``), and persists the returned
 ``TicketRef`` onto the finding group plus an audit-trail entry — the same
@@ -57,9 +57,7 @@ def create_ticket(
         # system, and the group.ticket_ref assignment below would silently
         # overwrite the first one's reference, orphaning it with no link
         # back from this app.
-        raise TicketError(
-            f"A ticket already exists for this finding ({group.ticket_ref!r})."
-        )
+        raise TicketError(f"A ticket already exists for this finding ({group.ticket_ref!r}).")
 
     target = session.get(IntegrationTarget, target_id)
     if target is None:
@@ -92,8 +90,10 @@ def create_ticket(
             action="ticket_created",
             target=f"finding_group:{group.id}",
             event_metadata={
-                "integration_target_id": target.id, "kind": target.kind,
-                "ref": ref.ref, "simulated": ref.simulated,
+                "integration_target_id": target.id,
+                "kind": target.kind,
+                "ref": ref.ref,
+                "simulated": ref.simulated,
             },
         )
     )

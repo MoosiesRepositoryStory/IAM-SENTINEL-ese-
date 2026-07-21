@@ -41,7 +41,9 @@ class DashboardData:
     riskiest: list[RiskyPrincipal] = field(default_factory=list)
 
 
-def _posture_factors(active: list[Finding], principals: dict[str, Principal]) -> list[PostureFactor]:
+def _posture_factors(
+    active: list[Finding], principals: dict[str, Principal]
+) -> list[PostureFactor]:
     factors = []
     for f in active:
         p = principals.get(f.principal_uid or "")

@@ -35,7 +35,10 @@ from typing import Any
 
 # --- policy documents ------------------------------------------------------
 
-_ADMIN = {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Action": "*", "Resource": "*"}]}
+_ADMIN = {
+    "Version": "2012-10-17",
+    "Statement": [{"Effect": "Allow", "Action": "*", "Resource": "*"}],
+}
 _READONLY_S3 = {
     "Version": "2012-10-17",
     "Statement": [
@@ -94,9 +97,7 @@ def _trust_service(service: str) -> dict[str, Any]:
 def _trust_principals(arns: list[str]) -> dict[str, Any]:
     return {
         "Version": "2012-10-17",
-        "Statement": [
-            {"Effect": "Allow", "Principal": {"AWS": arns}, "Action": "sts:AssumeRole"}
-        ],
+        "Statement": [{"Effect": "Allow", "Principal": {"AWS": arns}, "Action": "sts:AssumeRole"}],
     }
 
 
@@ -158,45 +159,83 @@ USERS: tuple[UserSpec, ...] = (
     ),
     # Clean engineer: MFA on, tight policy, fresh key.
     UserSpec(
-        "alice", console=True, mfa=True, managed=("ReadOnlyS3",),
-        key_age_days=30, last_login_days_ago=3, password_age_days=40,
+        "alice",
+        console=True,
+        mfa=True,
+        managed=("ReadOnlyS3",),
+        key_age_days=30,
+        last_login_days_ago=3,
+        password_age_days=40,
     ),
     # Admin with MFA — admin-equivalent finding, but hygiene is otherwise ok.
     UserSpec(
-        "bob", console=True, mfa=True, managed=("AdminAccess",),
-        key_age_days=45, last_login_days_ago=2, password_age_days=25,
+        "bob",
+        console=True,
+        mfa=True,
+        managed=("AdminAccess",),
+        key_age_days=45,
+        last_login_days_ago=2,
+        password_age_days=25,
     ),
     # Analyst: no MFA, inactive, stale password + old key.
     UserSpec(
-        "carol", console=True, mfa=False, managed=("ReadOnlyS3",),
-        key_age_days=120, last_login_days_ago=150, password_age_days=300,
+        "carol",
+        console=True,
+        mfa=False,
+        managed=("ReadOnlyS3",),
+        key_age_days=120,
+        last_login_days_ago=150,
+        password_age_days=300,
     ),
     # Service account with console access (should never have it) + old key.
     UserSpec(
-        "ci-deploy", account_type="service", console=True, mfa=False,
-        managed=("DeployPipeline",), key_age_days=200,
+        "ci-deploy",
+        account_type="service",
+        console=True,
+        mfa=False,
+        managed=("DeployPipeline",),
+        key_age_days=200,
     ),
     # Dormant contractor: never logged in, no credentials to speak of.
     UserSpec("dormant", console=False, mfa=False),
     # Well-behaved service account: no console, recent key, tight policy.
     UserSpec(
-        "svc-metrics", account_type="service", console=False, mfa=False,
-        managed=("ReadOnlyS3",), key_age_days=15,
+        "svc-metrics",
+        account_type="service",
+        console=False,
+        mfa=False,
+        managed=("ReadOnlyS3",),
+        key_age_days=15,
     ),
     # Clean engineer #2.
     UserSpec(
-        "dave", console=True, mfa=True, managed=("ReadOnlyS3", "LambdaExecute"),
-        key_age_days=20, last_login_days_ago=5, password_age_days=30,
+        "dave",
+        console=True,
+        mfa=True,
+        managed=("ReadOnlyS3", "LambdaExecute"),
+        key_age_days=20,
+        last_login_days_ago=5,
+        password_age_days=30,
     ),
     # Finance analyst: no MFA + very old key.
     UserSpec(
-        "erin", console=True, mfa=False, managed=("BillingReadOnly",),
-        key_age_days=400, last_login_days_ago=10, password_age_days=60,
+        "erin",
+        console=True,
+        mfa=False,
+        managed=("BillingReadOnly",),
+        key_age_days=400,
+        last_login_days_ago=10,
+        password_age_days=60,
     ),
     # Second admin, MFA on.
     UserSpec(
-        "frank", console=True, mfa=True, managed=("AdminAccess",),
-        key_age_days=25, last_login_days_ago=1, password_age_days=15,
+        "frank",
+        console=True,
+        mfa=True,
+        managed=("AdminAccess",),
+        key_age_days=25,
+        last_login_days_ago=1,
+        password_age_days=15,
     ),
 )
 
@@ -323,9 +362,7 @@ def seed_org(iam: Any, drift_level: int = 0) -> None:
 
     policy_arns: dict[str, str] = {}
     for spec in MANAGED_POLICIES:
-        resp = iam.create_policy(
-            PolicyName=spec.name, PolicyDocument=json.dumps(spec.document)
-        )
+        resp = iam.create_policy(PolicyName=spec.name, PolicyDocument=json.dumps(spec.document))
         policy_arns[spec.name] = resp["Policy"]["Arn"]
 
     for user in users:
@@ -350,9 +387,7 @@ def seed_org(iam: Any, drift_level: int = 0) -> None:
             )
 
     for role in roles:
-        iam.create_role(
-            RoleName=role.name, AssumeRolePolicyDocument=json.dumps(role.trust)
-        )
+        iam.create_role(RoleName=role.name, AssumeRolePolicyDocument=json.dumps(role.trust))
         for pname in role.managed:
             iam.attach_role_policy(RoleName=role.name, PolicyArn=policy_arns[pname])
         for iname, doc in role.inline.items():

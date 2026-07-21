@@ -38,7 +38,9 @@ class BulkResult:
         return len(self.succeeded)
 
 
-def _record_batch_event(session: Session, actor_id: int | None, action: str, result: BulkResult, **meta: object) -> None:
+def _record_batch_event(
+    session: Session, actor_id: int | None, action: str, result: BulkResult, **meta: object
+) -> None:
     if not result.succeeded:
         return
     session.add(
@@ -53,7 +55,12 @@ def _record_batch_event(session: Session, actor_id: int | None, action: str, res
 
 
 def bulk_transition(
-    session: Session, group_ids: list[int], to_status: str, *, actor_id: int | None, note: str | None = None
+    session: Session,
+    group_ids: list[int],
+    to_status: str,
+    *,
+    actor_id: int | None,
+    note: str | None = None,
 ) -> BulkResult:
     result = BulkResult(action="transition")
     for gid in group_ids:
@@ -113,8 +120,13 @@ def bulk_exception(
             continue
         try:
             create_exception(
-                session, group, kind=kind, reason=reason, actor_id=actor_id,
-                actor_role=actor_role, expires_at=expires_at,
+                session,
+                group,
+                kind=kind,
+                reason=reason,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                expires_at=expires_at,
             )
         except (InvalidTransition, ExceptionError, rbac.PermissionDenied) as exc:
             result.failed.append((gid, str(exc)))

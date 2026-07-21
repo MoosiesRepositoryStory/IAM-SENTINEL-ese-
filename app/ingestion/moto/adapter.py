@@ -104,7 +104,10 @@ class MotoAwsIngestionAdapter:
                 policy_uids.append(puid)
                 attachments.append((uid, puid))
                 policy_docs[puid] = {
-                    "policy_uid": puid, "name": pname, "kind": "inline", "document": doc,
+                    "policy_uid": puid,
+                    "name": pname,
+                    "kind": "inline",
+                    "document": doc,
                 }
 
             account_type = tags.get("account_type", "human")
@@ -154,7 +157,10 @@ class MotoAwsIngestionAdapter:
                 policy_uids.append(puid)
                 attachments.append((uid, puid))
                 policy_docs[puid] = {
-                    "policy_uid": puid, "name": pname, "kind": "inline", "document": doc,
+                    "policy_uid": puid,
+                    "name": pname,
+                    "kind": "inline",
+                    "document": doc,
                 }
 
             principals.append(

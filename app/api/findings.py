@@ -254,8 +254,13 @@ def ticket_route(payload: dict, group_id: int) -> object:
         finding_url = url_for("web.finding_drawer", group_id=group_id, _external=True)
         try:
             create_ticket(
-                session, detail.group, detail.finding, target_id=payload["target_id"],
-                title=payload["title"], body=payload["body"], finding_url=finding_url,
+                session,
+                detail.group,
+                detail.finding,
+                target_id=payload["target_id"],
+                title=payload["title"],
+                body=payload["body"],
+                finding_url=finding_url,
                 actor_id=actor.id,
             )
         except TicketError as exc:

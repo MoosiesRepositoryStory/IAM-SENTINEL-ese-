@@ -58,7 +58,9 @@ def list_checks() -> None:
 )
 @click.option("--inventory", type=click.Path(exists=True), help="Users CSV path (file source).")
 @click.option("--policies", type=click.Path(exists=True), help="Policies JSON path (file source).")
-@click.option("--logs", type=click.Path(exists=True), help="Auth/CloudTrail log path (file source).")
+@click.option(
+    "--logs", type=click.Path(exists=True), help="Auth/CloudTrail log path (file source)."
+)
 @click.option("--inactivity-days", default=90, show_default=True)
 @click.option("--password-age-days", default=90, show_default=True)
 @click.option("--key-age-days", default=90, show_default=True)
@@ -93,9 +95,7 @@ def scan(
     )
     source_config: dict[str, object] = {**thresholds.to_dict()}
     if source == "file":
-        source_config.update(
-            inventory_path=inventory, policies_path=policies, logs_path=logs
-        )
+        source_config.update(inventory_path=inventory, policies_path=policies, logs_path=logs)
 
     with session_scope() as session:
         account = create_account(

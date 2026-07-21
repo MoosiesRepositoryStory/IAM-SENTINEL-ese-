@@ -17,14 +17,18 @@ from sqlalchemy import select
 
 def test_create_webhook_target(db_session) -> None:
     target = create_target(
-        db_session, kind="webhook", name="Triage hook",
+        db_session,
+        kind="webhook",
+        name="Triage hook",
         config={"url": "https://example.com/hook"},
     )
     assert target.id is not None
     assert target.enabled is True
     row = db_session.get(IntegrationTarget, target.id)
     assert row.config == {"url": "https://example.com/hook"}
-    event = db_session.scalars(select(AuditEvent).where(AuditEvent.action == "integration_created")).one()
+    event = db_session.scalars(
+        select(AuditEvent).where(AuditEvent.action == "integration_created")
+    ).one()
     assert event.event_metadata["kind"] == "webhook"
 
 
@@ -72,7 +76,9 @@ def test_delete_target(db_session) -> None:
     target = create_target(db_session, kind="webhook", name="A", config={"url": "https://a"})
     delete_target(db_session, target.id)
     assert db_session.get(IntegrationTarget, target.id) is None
-    event = db_session.scalars(select(AuditEvent).where(AuditEvent.action == "integration_deleted")).one()
+    event = db_session.scalars(
+        select(AuditEvent).where(AuditEvent.action == "integration_deleted")
+    ).one()
     assert event.event_metadata["name"] == "A"
 
 

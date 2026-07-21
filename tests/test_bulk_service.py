@@ -43,6 +43,7 @@ def _actor(session) -> AppUser:
 
 # ---- bulk_transition ----
 
+
 def test_bulk_transition_all_succeed(db_session) -> None:
     _scan(db_session)
     groups = _groups(db_session)[:3]
@@ -135,6 +136,7 @@ def test_bulk_transition_no_successes_writes_no_audit_event(db_session) -> None:
 
 # ---- bulk_assign ----
 
+
 def test_bulk_assign_sets_assignee_on_all(db_session) -> None:
     _scan(db_session)
     groups = _groups(db_session)[:3]
@@ -164,6 +166,7 @@ def test_bulk_assign_unassign(db_session) -> None:
 
 # ---- bulk_exception ----
 
+
 def test_bulk_suppress_all_succeed_with_shared_reason(db_session) -> None:
     _scan(db_session)
     groups = _groups(db_session)[:3]
@@ -183,7 +186,11 @@ def test_bulk_accept_risk_with_expiry(db_session) -> None:
     ids = [g.id for g in groups]
 
     result = bulk_exception(
-        db_session, ids, "accepted_risk", reason="Tracked JIRA-1", actor_id=actor.id,
+        db_session,
+        ids,
+        "accepted_risk",
+        reason="Tracked JIRA-1",
+        actor_id=actor.id,
         expires_at="2099-01-01",
     )
 
@@ -215,4 +222,6 @@ def test_bulk_exception_mixed_eligibility_partial_success(db_session) -> None:
     result = bulk_exception(db_session, ids, "suppressed", reason="noise", actor_id=actor.id)
 
     assert set(result.succeeded) == {groups[1].id, groups[2].id}
-    assert result.failed == [(groups[0].id, "Cannot transition finding from 'investigating' to 'suppressed'")]
+    assert result.failed == [
+        (groups[0].id, "Cannot transition finding from 'investigating' to 'suppressed'")
+    ]

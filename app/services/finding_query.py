@@ -174,9 +174,7 @@ def _apply_filters(stmt: Select[Any], f: FindingFilters) -> Select[Any]:
 
 def _facet_counts(session: Session, run_id: int, column: Any) -> dict[str, int]:
     rows = session.execute(
-        select(column, func.count())
-        .where(Finding.run_id == run_id)
-        .group_by(column)
+        select(column, func.count()).where(Finding.run_id == run_id).group_by(column)
     ).all()
     return {str(value): count for value, count in rows if value is not None}
 
@@ -209,19 +207,28 @@ def query_findings(
     run = latest_run(session, account_id)
     if run is None:
         return FindingsPage(
-            run=None, rows=[], total=0, page=1, page_size=page_size,
-            sort=sort, filters=filters, facets={},
+            run=None,
+            rows=[],
+            total=0,
+            page=1,
+            page_size=page_size,
+            sort=sort,
+            filters=filters,
+            facets={},
         )
 
     base = select(Finding).where(Finding.run_id == run.id)
     filtered = _apply_filters(base, filters)
 
-    total = session.scalar(
-        _apply_filters(
-            select(func.count()).select_from(Finding).where(Finding.run_id == run.id),
-            filters,
+    total = (
+        session.scalar(
+            _apply_filters(
+                select(func.count()).select_from(Finding).where(Finding.run_id == run.id),
+                filters,
+            )
         )
-    ) or 0
+        or 0
+    )
 
     order_cols = []
     for s in sort:
@@ -236,11 +243,7 @@ def query_findings(
         page = offset // page_size + 1 if page_size else 1
 
     rows = list(
-        session.scalars(
-            filtered.order_by(*order_cols)
-            .offset(effective_offset)
-            .limit(page_size)
-        )
+        session.scalars(filtered.order_by(*order_cols).offset(effective_offset).limit(page_size))
     )
 
     facets = {
@@ -250,8 +253,14 @@ def query_findings(
     }
 
     return FindingsPage(
-        run=run, rows=rows, total=total, page=page, page_size=page_size,
-        sort=sort, filters=filters, facets=facets,
+        run=run,
+        rows=rows,
+        total=total,
+        page=page,
+        page_size=page_size,
+        sort=sort,
+        filters=filters,
+        facets=facets,
     )
 
 
@@ -273,7 +282,5 @@ def group_meta(session: Session, group_ids: list[int]) -> dict[int, FindingGroup
     first-last-seen live on the group, not the per-run Finding)."""
     if not group_ids:
         return {}
-    groups = session.scalars(
-        select(FindingGroup).where(FindingGroup.id.in_(group_ids))
-    )
+    groups = session.scalars(select(FindingGroup).where(FindingGroup.id.in_(group_ids)))
     return {g.id: g for g in groups}

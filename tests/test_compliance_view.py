@@ -33,7 +33,9 @@ def _run(session, account: Account) -> Run:
     return run
 
 
-def _finding(session, run: Run, *, check_id: str, severity: str = "HIGH", status: str = "open") -> Finding:
+def _finding(
+    session, run: Run, *, check_id: str, severity: str = "HIGH", status: str = "open"
+) -> Finding:
     group = FindingGroup(
         account_id=run.account_id, fingerprint=f"{check_id}:{status}:{uuid4()}", check_id=check_id
     )
@@ -122,7 +124,9 @@ def test_finding_count_matches_exact_underlying_row_count(db_session) -> None:
     run = _run(db_session, account)
     for _ in range(4):
         _finding(db_session, run, check_id="iam.user.mfa_disabled", severity="HIGH", status="open")
-    _finding(db_session, run, check_id="iam.user.mfa_disabled", severity="HIGH", status="resolved")  # excluded
+    _finding(
+        db_session, run, check_id="iam.user.mfa_disabled", severity="HIGH", status="resolved"
+    )  # excluded
 
     cis = _cis(db_session, run.id)
     assert _control(cis, "1.10").finding_count == 4  # not 5 — resolved doesn't count

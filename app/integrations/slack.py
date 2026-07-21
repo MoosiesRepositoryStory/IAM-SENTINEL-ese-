@@ -35,7 +35,11 @@ class SlackAdapter:
                             "type": "mrkdwn",
                             "text": (
                                 f"*Severity:* {finding.severity} · *Check:* {finding.check_id}"
-                                + (f" · *Principal:* `{finding.principal_uid}`" if finding.principal_uid else "")
+                                + (
+                                    f" · *Principal:* `{finding.principal_uid}`"
+                                    if finding.principal_uid
+                                    else ""
+                                )
                             ),
                         }
                     ],

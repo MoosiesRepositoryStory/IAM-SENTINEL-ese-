@@ -56,10 +56,17 @@ def test_bearer_auth_is_the_default_security_requirement(client) -> None:
 @pytest.mark.parametrize(
     "path",
     [
-        "/api/v1/me", "/api/v1/accounts", "/api/v1/runs", "/api/v1/runs/{run_id}",
-        "/api/v1/runs/{run_id}/findings", "/api/v1/findings", "/api/v1/findings/{group_id}",
-        "/api/v1/principals", "/api/v1/principals/{principal_uid}/graph",
-        "/api/v1/compliance", "/api/v1/checks",
+        "/api/v1/me",
+        "/api/v1/accounts",
+        "/api/v1/runs",
+        "/api/v1/runs/{run_id}",
+        "/api/v1/runs/{run_id}/findings",
+        "/api/v1/findings",
+        "/api/v1/findings/{group_id}",
+        "/api/v1/principals",
+        "/api/v1/principals/{principal_uid}/graph",
+        "/api/v1/compliance",
+        "/api/v1/checks",
     ],
 )
 def test_every_read_route_is_documented(client, path) -> None:

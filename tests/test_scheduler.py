@@ -101,7 +101,9 @@ def fresh_scheduler():
         set_scheduler(original)
 
 
-def _committed_schedule(session, *, cron: str = "0 2 * * *", enabled: bool = True) -> tuple[int, int]:
+def _committed_schedule(
+    session, *, cron: str = "0 2 * * *", enabled: bool = True
+) -> tuple[int, int]:
     """Returns (schedule_id, account_id) rather than the ORM object — every
     caller needs these across a session boundary anyway, and passing plain
     ints sidesteps any temptation to read stale attributes off a detached
@@ -266,8 +268,12 @@ def _scan_and_group_id(session) -> int:
 
 
 def _actor_id(session) -> int:
-    user = AppUser(email="sched-test@iam-sentinel.local", display_name="Test Actor",
-                    password_hash="!", role="admin")
+    user = AppUser(
+        email="sched-test@iam-sentinel.local",
+        display_name="Test Actor",
+        password_hash="!",
+        role="admin",
+    )
     session.add(user)
     session.flush()
     return user.id
@@ -282,7 +288,11 @@ def test_run_expire_exceptions_job_reopens_an_expired_exception_via_today_overri
     group_id = _scan_and_group_id(db_session)
     group = db_session.get(FindingGroup, group_id)
     create_exception(
-        db_session, group, kind="accepted_risk", reason="temporary", actor_id=_actor_id(db_session),
+        db_session,
+        group,
+        kind="accepted_risk",
+        reason="temporary",
+        actor_id=_actor_id(db_session),
         expires_at="2020-01-01",
     )
     db_session.commit()
@@ -302,7 +312,11 @@ def test_run_expire_exceptions_job_is_a_no_op_before_expiry(db_session) -> None:
     group_id = _scan_and_group_id(db_session)
     group = db_session.get(FindingGroup, group_id)
     create_exception(
-        db_session, group, kind="accepted_risk", reason="temporary", actor_id=_actor_id(db_session),
+        db_session,
+        group,
+        kind="accepted_risk",
+        reason="temporary",
+        actor_id=_actor_id(db_session),
         expires_at="2099-01-01",
     )
     db_session.commit()

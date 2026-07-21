@@ -98,6 +98,7 @@ def _require_login() -> Response | None:
         return resp
     return cast(Response, redirect(url_for("web.login", next=request.path)))
 
+
 # Column definitions drive both the header row and the "Columns" menu (§8.2).
 # ``key`` matches finding_query._SORTABLE where sortable; ``default`` = shown.
 COLUMNS: list[dict[str, str | bool]] = [
@@ -294,9 +295,12 @@ def connect_account_route() -> Response | str | tuple[str, int]:
                 wizard_open=True,
                 wizard_step=wizard_step,
                 form_values={
-                    "name": name, "method": method,
-                    "role_arn": role_arn, "external_id": external_id,
-                    "schedule_enabled": schedule_enabled, "schedule_cron": schedule_cron,
+                    "name": name,
+                    "method": method,
+                    "role_arn": role_arn,
+                    "external_id": external_id,
+                    "schedule_enabled": schedule_enabled,
+                    "schedule_cron": schedule_cron,
                 },
             ), 400
     # The account (+ schedule, if any) row is committed now (the `with` block
@@ -307,7 +311,9 @@ def connect_account_route() -> Response | str | tuple[str, int]:
     # DB row it reads back on every fire is durable).
     if new_schedule_id is not None:
         sync_schedule(new_schedule_id, cron=schedule_cron, enabled=True)
-    run_id = enqueue_scan(account_id, thresholds=thresholds, trigger="manual", triggered_by=actor_id)
+    run_id = enqueue_scan(
+        account_id, thresholds=thresholds, trigger="manual", triggered_by=actor_id
+    )
     return cast(Response, redirect(url_for("web.runs", highlight=run_id)))
 
 
@@ -325,7 +331,9 @@ def rescan_account(account_id: int) -> Response:
         actor = current_user
         actor_id = actor.id
         thresholds = Thresholds.from_dict(account.source_config or {})
-    run_id = enqueue_scan(account_id, thresholds=thresholds, trigger="manual", triggered_by=actor_id)
+    run_id = enqueue_scan(
+        account_id, thresholds=thresholds, trigger="manual", triggered_by=actor_id
+    )
     return cast(Response, redirect(url_for("web.runs", highlight=run_id)))
 
 
@@ -349,8 +357,12 @@ def save_schedule(account_id: int) -> Response | str | tuple[str, int]:
         thresholds = Thresholds.from_dict(account.source_config or {})
         try:
             schedule = upsert_schedule(
-                session, account_id=account_id, cron=cron, thresholds=thresholds,
-                enabled=enabled, actor_id=actor.id,
+                session,
+                account_id=account_id,
+                cron=cron,
+                thresholds=thresholds,
+                enabled=enabled,
+                actor_id=actor.id,
             )
         except ScheduleError as exc:
             rows = list_accounts(session)
@@ -369,7 +381,11 @@ def save_schedule(account_id: int) -> Response | str | tuple[str, int]:
                 default_thresholds=Thresholds().to_dict(),
                 error=str(exc),
                 schedule_open_for=account_id,
-                schedule_form_values={"cron": cron, "enabled": enabled, "exists": existing is not None},
+                schedule_form_values={
+                    "cron": cron,
+                    "enabled": enabled,
+                    "exists": existing is not None,
+                },
             ), 400
         schedule_id = schedule.id
     sync_schedule(schedule_id, cron=cron, enabled=enabled)
@@ -631,7 +647,9 @@ def finding_transition(group_id: int) -> Response | str | tuple[str, int]:
         actor = current_user
         try:
             if to_status == "open" and detail.group.current_status in EXCEPTION_STATUSES:
-                revoke_exception(session, detail.group, actor_id=actor.id, note=note or "Exception revoked")
+                revoke_exception(
+                    session, detail.group, actor_id=actor.id, note=note or "Exception revoked"
+                )
             else:
                 transition(session, detail.group, to_status, actor_id=actor.id, note=note)
         except InvalidTransition as exc:
@@ -649,8 +667,13 @@ def _apply_exception(group_id: int, kind: str) -> Response | str | tuple[str, in
         actor = current_user
         try:
             create_exception(
-                session, detail.group, kind=kind, reason=reason, actor_id=actor.id,
-                actor_role=actor.role, expires_at=expires_at,
+                session,
+                detail.group,
+                kind=kind,
+                reason=reason,
+                actor_id=actor.id,
+                actor_role=actor.role,
+                expires_at=expires_at,
             )
         except InvalidTransition as exc:
             return _render_drawer(session, group_id, error=str(exc)), 409
@@ -737,8 +760,14 @@ def finding_create_ticket(group_id: int) -> Response | str | tuple[str, int]:
             if target_id is None:
                 raise TicketError("Choose an integration target.")
             create_ticket(
-                session, detail.group, detail.finding, target_id=target_id,
-                title=title, body=body, finding_url=finding_url, actor_id=actor.id,
+                session,
+                detail.group,
+                detail.finding,
+                target_id=target_id,
+                title=title,
+                body=body,
+                finding_url=finding_url,
+                actor_id=actor.id,
             )
         except (TicketError, IntegrationError) as exc:
             # open_action keeps the modal open (rather than the generic
@@ -747,7 +776,10 @@ def finding_create_ticket(group_id: int) -> Response | str | tuple[str, int]:
             # without reopening it from scratch; ticket_form_values preserves
             # what they typed rather than resetting to the prefilled defaults.
             return _render_drawer(
-                session, group_id, open_action="create_ticket", ticket_error=str(exc),
+                session,
+                group_id,
+                open_action="create_ticket",
+                ticket_error=str(exc),
                 ticket_form_values={"target_id": target_id, "title": title, "body": body},
             ), 400
         return _render_drawer(session, group_id)
@@ -823,8 +855,13 @@ def _bulk_apply_exception(kind: str) -> Response | str:
     with session_scope() as session:
         actor = current_user
         result = bulk_exception(
-            session, group_ids, kind, reason=reason, actor_id=actor.id,
-            actor_role=actor.role, expires_at=expires_at,
+            session,
+            group_ids,
+            kind,
+            reason=reason,
+            actor_id=actor.id,
+            actor_role=actor.role,
+            expires_at=expires_at,
         )
     return _bulk_response(result)
 
@@ -840,9 +877,7 @@ def palette_search() -> Response | str:
         account = _current_account(session)
         if account is None:
             return ""
-        page = query_findings(
-            session, account.id, filters=FindingFilters(search=q), page_size=8
-        )
+        page = query_findings(session, account.id, filters=FindingFilters(search=q), page_size=8)
         for row in page.rows:
             session.expunge(row)
         return render_template("partials/palette_results.html", rows=page.rows)

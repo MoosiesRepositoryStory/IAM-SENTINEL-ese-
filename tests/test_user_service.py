@@ -25,8 +25,11 @@ pytestmark = pytest.mark.integration
 
 def _user(session, *, email="u@x.local", role="analyst", active=True) -> AppUser:
     user = AppUser(
-        email=email, display_name="U", password_hash=hash_password("whatever1"),
-        role=role, is_active=active,
+        email=email,
+        display_name="U",
+        password_hash=hash_password("whatever1"),
+        role=role,
+        is_active=active,
     )
     session.add(user)
     session.flush()
@@ -38,8 +41,11 @@ def _user(session, *, email="u@x.local", role="analyst", active=True) -> AppUser
 
 def test_create_user_success(db_session) -> None:
     user = create_user(
-        db_session, email="New@Example.com", display_name="New Person",
-        role="analyst", password="a-long-password",
+        db_session,
+        email="New@Example.com",
+        display_name="New Person",
+        role="analyst",
+        password="a-long-password",
     )
     assert user.email == "new@example.com"  # normalized
     assert user.is_active is True
@@ -48,8 +54,12 @@ def test_create_user_success(db_session) -> None:
 
 def test_create_user_writes_audit_event(db_session) -> None:
     user = create_user(
-        db_session, email="a@x.local", display_name="A", role="admin",
-        password="a-long-password", actor_id=None,
+        db_session,
+        email="a@x.local",
+        display_name="A",
+        role="admin",
+        password="a-long-password",
+        actor_id=None,
     )
     events = db_session.scalars(select(AuditEvent).where(AuditEvent.action == "user_created")).all()
     assert len(events) == 1
@@ -60,10 +70,22 @@ def test_create_user_writes_audit_event(db_session) -> None:
 @pytest.mark.parametrize(
     ("kwargs", "match"),
     [
-        ({"email": "  ", "display_name": "X", "role": "analyst", "password": "longenough"}, "Email is required"),
-        ({"email": "x@y.z", "display_name": " ", "role": "analyst", "password": "longenough"}, "Display name is required"),
-        ({"email": "x@y.z", "display_name": "X", "role": "superuser", "password": "longenough"}, "Invalid role"),
-        ({"email": "x@y.z", "display_name": "X", "role": "analyst", "password": "short"}, "at least 8 characters"),
+        (
+            {"email": "  ", "display_name": "X", "role": "analyst", "password": "longenough"},
+            "Email is required",
+        ),
+        (
+            {"email": "x@y.z", "display_name": " ", "role": "analyst", "password": "longenough"},
+            "Display name is required",
+        ),
+        (
+            {"email": "x@y.z", "display_name": "X", "role": "superuser", "password": "longenough"},
+            "Invalid role",
+        ),
+        (
+            {"email": "x@y.z", "display_name": "X", "role": "analyst", "password": "short"},
+            "at least 8 characters",
+        ),
     ],
 )
 def test_create_user_validation(db_session, kwargs, match) -> None:
@@ -75,8 +97,11 @@ def test_create_user_duplicate_email_rejected(db_session) -> None:
     _user(db_session, email="dupe@x.local")
     with pytest.raises(UserError, match="already exists"):
         create_user(
-            db_session, email="dupe@x.local", display_name="Other",
-            role="analyst", password="a-long-password",
+            db_session,
+            email="dupe@x.local",
+            display_name="Other",
+            role="analyst",
+            password="a-long-password",
         )
 
 
@@ -181,7 +206,9 @@ def test_update_role_writes_audit_event(db_session) -> None:
     _user(db_session, email="admin1@x.local", role="admin")
     user = _user(db_session, email="u@x.local", role="analyst")
     update_role(db_session, user.id, "admin", actor_id=None)
-    events = db_session.scalars(select(AuditEvent).where(AuditEvent.action == "user_role_changed")).all()
+    events = db_session.scalars(
+        select(AuditEvent).where(AuditEvent.action == "user_role_changed")
+    ).all()
     assert len(events) == 1
     assert events[0].event_metadata == {"from": "analyst", "to": "admin"}
 
@@ -247,7 +274,9 @@ def _force_both_reads_before_either_decides(monkeypatch) -> None:
     monkeypatch.setattr(user_service_module, "active_admin_count", synced_active_admin_count)
 
 
-def test_concurrent_deactivation_of_last_two_admins_only_one_succeeds(db_session, monkeypatch) -> None:
+def test_concurrent_deactivation_of_last_two_admins_only_one_succeeds(
+    db_session, monkeypatch
+) -> None:
     """Two admins, A and B. Thread 1 deactivates B; thread 2 deactivates A,
     at the same moment. Without a lock, both threads' reads land before
     either commits — both see "the other admin is still active" — and both

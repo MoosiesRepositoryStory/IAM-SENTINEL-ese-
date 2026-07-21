@@ -116,7 +116,9 @@ def principal_graph(session: Session, run_id: int, principal_uid: str) -> dict[s
     further escalation targets, which would be a different principal's page).
     """
     principal = session.scalar(
-        select(Principal).where(Principal.run_id == run_id, Principal.principal_uid == principal_uid)
+        select(Principal).where(
+            Principal.run_id == run_id, Principal.principal_uid == principal_uid
+        )
     )
     if principal is None:
         return None
@@ -147,8 +149,11 @@ def principal_graph(session: Session, run_id: int, principal_uid: str) -> dict[s
         if node_id in nodes:
             return
         data: dict[str, Any] = {
-            "id": node_id, "type": node_type, "uid": uid,
-            "label": _short_label(uid), "is_focus": uid == principal_uid,
+            "id": node_id,
+            "type": node_type,
+            "uid": uid,
+            "label": _short_label(uid),
+            "is_focus": uid == principal_uid,
         }
         if node_type == "principal":
             p = principals_by_uid.get(uid)

@@ -62,13 +62,17 @@ def create_target(
     required = _REQUIRED_CONFIG_KEY.get(kind)
     if required and not (config.get(required) or "").strip():
         raise IntegrationError(f"{kind} targets require a {required!r} value.")
-    target = IntegrationTarget(kind=kind, name=name, config=config, enabled=True, created_by=actor_id)
+    target = IntegrationTarget(
+        kind=kind, name=name, config=config, enabled=True, created_by=actor_id
+    )
     session.add(target)
     session.flush()
     session.add(
         AuditEvent(
-            actor_id=actor_id, action="integration_created",
-            target=f"integration_target:{target.id}", event_metadata={"kind": kind, "name": name},
+            actor_id=actor_id,
+            action="integration_created",
+            target=f"integration_target:{target.id}",
+            event_metadata={"kind": kind, "name": name},
         )
     )
     return target
@@ -98,8 +102,10 @@ def delete_target(session: Session, target_id: int, *, actor_id: int | None = No
         raise IntegrationError("Integration target not found.")
     session.add(
         AuditEvent(
-            actor_id=actor_id, action="integration_deleted",
-            target=f"integration_target:{target.id}", event_metadata={"kind": target.kind, "name": target.name},
+            actor_id=actor_id,
+            action="integration_deleted",
+            target=f"integration_target:{target.id}",
+            event_metadata={"kind": target.kind, "name": target.name},
         )
     )
     session.delete(target)

@@ -110,7 +110,9 @@ def fire_schedule(schedule_id: int) -> int | None:
     # and enqueue_scan owns its own session + hands execution to a worker
     # thread that needs to see an already-durable Account row (same discipline
     # the Connect wizard and "Scan now" follow since Slice 3).
-    return enqueue_scan(account_id, thresholds=thresholds, trigger="scheduled", triggered_by=created_by)
+    return enqueue_scan(
+        account_id, thresholds=thresholds, trigger="scheduled", triggered_by=created_by
+    )
 
 
 def _register_schedule_job(scheduler: BackgroundScheduler, schedule_id: int, cron: str) -> None:

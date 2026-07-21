@@ -27,7 +27,9 @@ def _run(session, account: Account) -> Run:
 
 def _principal(session, run: Run, uid: str, *, blast: int) -> None:
     session.add(
-        Principal(run_id=run.id, principal_uid=uid, kind="user", username=uid, blast_radius_score=blast)
+        Principal(
+            run_id=run.id, principal_uid=uid, kind="user", username=uid, blast_radius_score=blast
+        )
     )
     session.flush()
 

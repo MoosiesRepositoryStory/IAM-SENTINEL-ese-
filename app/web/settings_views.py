@@ -52,13 +52,23 @@ def _users_page(*, error: str | None = None, form_open: bool = False, status: in
         # controls (see settings_users.html) — a UX hint, not the actual
         # guard (user_service re-checks server-side regardless).
         lockout_id = next(
-            (u.id for u in users if u.role == "admin" and u.is_active and active_admin_count(session, excluding=u.id) == 0),
+            (
+                u.id
+                for u in users
+                if u.role == "admin"
+                and u.is_active
+                and active_admin_count(session, excluding=u.id) == 0
+            ),
             None,
         )
         for u in users:
             session.expunge(u)
     body = render_template(
-        "settings_users.html", users=users, roles=ROLES, error=error, form_open=form_open,
+        "settings_users.html",
+        users=users,
+        roles=ROLES,
+        error=error,
+        form_open=form_open,
         lockout_id=lockout_id,
     )
     return (body, status) if status != 200 else body
@@ -121,7 +131,11 @@ def _integrations_page(*, error: str | None = None, form_open: bool = False, sta
         for t in targets:
             session.expunge(t)
     body = render_template(
-        "settings_integrations.html", targets=targets, kinds=KINDS, error=error, form_open=form_open,
+        "settings_integrations.html",
+        targets=targets,
+        kinds=KINDS,
+        error=error,
+        form_open=form_open,
     )
     return (body, status) if status != 200 else body
 
@@ -146,7 +160,10 @@ def integrations_create() -> Response | str | tuple[str, int]:
     with session_scope() as session:
         try:
             create_target(
-                session, kind=kind, name=request.form.get("name", ""), config=config,
+                session,
+                kind=kind,
+                name=request.form.get("name", ""),
+                config=config,
                 actor_id=current_user.id,
             )
         except IntegrationError as exc:
@@ -191,7 +208,9 @@ def profile_change_password() -> Response | str | tuple[str, int]:
     new_password = request.form.get("new_password", "")
     confirm_password = request.form.get("confirm_password", "")
     if new_password != confirm_password:
-        return render_template("profile.html", error="New password and confirmation do not match."), 400
+        return render_template(
+            "profile.html", error="New password and confirmation do not match."
+        ), 400
     with session_scope() as session:
         user = session.get(AppUser, current_user.id)
         if user is None:

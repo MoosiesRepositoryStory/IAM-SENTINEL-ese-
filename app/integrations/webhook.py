@@ -62,11 +62,18 @@ class WebhookAdapter:
         }
         data = json.dumps(payload).encode("utf-8")
 
-        connection = open_pinned_connection(scheme, hostname, port, pinned_ip, CONNECT_TIMEOUT_SECONDS)
+        connection = open_pinned_connection(
+            scheme, hostname, port, pinned_ip, CONNECT_TIMEOUT_SECONDS
+        )
         try:
             connection.request(
-                "POST", path, body=data,
-                headers={"Content-Type": "application/json", "User-Agent": "iam-sentinel-webhook/1"},
+                "POST",
+                path,
+                body=data,
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "iam-sentinel-webhook/1",
+                },
             )
             response = connection.getresponse()
             status = response.status
