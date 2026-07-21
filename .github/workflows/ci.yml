@@ -97,3 +97,61 @@ jobs:
       - name: Stop server
         if: always()
         run: kill "$(cat server.pid)" 2>/dev/null || true
+
+  docker:
+    runs-on: ubuntu-latest
+    # Builds the real image (Dockerfile/docker-compose.yml) and runs the same
+    # E2E suite against IT specifically — a genuinely different check from
+    # `e2e` above (which runs the app directly via server.py, never through
+    # the container/gunicorn/entrypoint-migration path at all). Seeding runs
+    # as a plain host-side Python process against the same Postgres via its
+    # published port (docker-compose.yml maps 5432:5432) rather than execing
+    # into the container — reuses seed.py exactly as-is.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # Host-side install: seeding + the E2E driver need the psycopg driver
+      # and playwright, not anything running inside the container itself.
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,e2e,docker]"
+          playwright install --with-deps chromium
+
+      - name: Build and start the containerized stack
+        run: docker compose up --build -d
+
+      - name: Wait for the app to become healthy
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:8000/healthz > /dev/null; then
+              echo "App is up (this also proves the entrypoint's migrations succeeded against Postgres)."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "App never became healthy." >&2
+          docker compose logs
+          exit 1
+
+      - name: Seed E2E data
+        run: python tests/e2e/seed.py
+        env:
+          DATABASE_URL: postgresql+psycopg://sentinel:sentinel@localhost:5432/sentinel
+
+      - name: Run E2E suite against the containerized app
+        run: pytest tests/e2e --base-url=http://127.0.0.1:8000 -v
+
+      - name: Container logs
+        if: always()
+        run: docker compose logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

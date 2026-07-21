@@ -1,0 +1,55 @@
+# Same spirit as .gitignore, plus dev-only source (tests/docs/samples) the
+# runtime image never needs — only app/, migrations/, alembic.ini,
+# pyproject.toml, and README.md actually make it into the build context that
+# matters (see the Dockerfile's builder stage).
+
+.git/
+.github/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual envs
+.venv/
+venv/
+env/
+node_modules/
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+coverage.xml
+htmlcov/
+
+# App data & artifacts
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Env / secrets
+.env
+.env.local
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Dev-only source not needed at runtime (not part of the installed package —
+# see pyproject.toml's [tool.setuptools.packages.find])
+tests/
+docs/
+samples/
+reports/
+Dockerfile
+docker-compose.yml

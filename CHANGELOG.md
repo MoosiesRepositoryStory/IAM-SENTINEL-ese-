@@ -6,6 +6,17 @@ All notable changes to this project are documented here. Format follows
 ## [Unreleased] — Phase 5: DevEx & repo polish (in progress)
 
 ### Added
+- Container image + local stack: multi-stage `Dockerfile` (deps built into a
+  venv in a builder stage so the runtime image ships no compiler/pip cache;
+  non-root `sentinel` user; `HEALTHCHECK` on the unauthenticated `/healthz`;
+  gunicorn with one worker + threads, deliberately single-process to match
+  the in-process APScheduler's design) and a `docker-compose.yml` running the
+  app against real Postgres — the `postgresql+psycopg://` target
+  `.env.example` already documented — with migrations applied on start by
+  `docker-entrypoint.sh`. New `docker` extra (`gunicorn`, `psycopg[binary]`)
+  and a CI `docker` job that builds the image and runs the E2E suite against
+  the containerized app (a genuinely distinct path from the `e2e` job, which
+  never exercises the container/gunicorn/entrypoint-migration flow).
 - Committed Playwright E2E suite (`tests/e2e/`, own README): login/logout +
   RBAC gating across all three seeded demo roles, one full findings-workflow
   cycle (transition/comment/assign/suppress), the run-to-run diff view, and
