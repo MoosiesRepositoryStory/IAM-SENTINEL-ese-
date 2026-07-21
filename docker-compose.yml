@@ -1,0 +1,48 @@
+# Local "serious demo" stack: the app against real Postgres (the driver
+# .env.example already documents, and what app/services/rbac.py's/
+# user_service.py's dialect-aware admin-lockout lock is written against) —
+# not SQLite, which is the CLI/dev-only default and needs no container at all.
+#
+#   docker compose up --build
+#
+# Migrations run automatically on container start (docker-entrypoint.sh).
+# Seed a demo org once the app is up:
+#   docker compose exec app iam-sentinel scan --source moto_aws
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: sentinel
+      POSTGRES_PASSWORD: sentinel
+      POSTGRES_DB: sentinel
+    volumes:
+      - sentinel-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentinel -d sentinel"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "5432:5432"
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://sentinel:sentinel@db:5432/sentinel
+      # Dev-only defaults — a real deployment (see README's "Deploy" section)
+      # sets its own SECRET_KEY/JWT_SECRET_KEY and ENVIRONMENT=production,
+      # which makes Settings.validate() fail closed on values this weak.
+      SECRET_KEY: dev-insecure-change-me
+      ENVIRONMENT: development
+    ports:
+      - "8000:8000"
+    volumes:
+      - sentinel-reports:/data/reports
+
+volumes:
+  sentinel-db-data:
+  sentinel-reports:

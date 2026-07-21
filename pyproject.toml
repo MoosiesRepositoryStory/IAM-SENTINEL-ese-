@@ -62,6 +62,11 @@ jobs = ["rq>=1.16", "redis>=5.0", "fakeredis>=2.23"]
 # doesn't pull in; the CI e2e job installs this on top of `dev` rather than
 # instead of it, since seeding + running the suite still needs boto3/moto.
 e2e = ["pytest-playwright>=0.5"]
+# The containerized/production deployment target (Dockerfile, docker-compose.yml,
+# Render): a real WSGI server instead of Flask's dev server, and the psycopg3
+# driver .env.example already documents (`postgresql+psycopg://...`) for
+# "the serious demo" — SQLite-only local/dev installs need neither.
+docker = ["gunicorn>=22.0", "psycopg[binary]>=3.1"]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
