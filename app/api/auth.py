@@ -83,7 +83,7 @@ def _authenticate_request() -> AppUser:
     if not token:
         raise ApiError(401, "unauthorized", "Missing or malformed Authorization header.")
 
-    payload = _decode_token(token, current_app.config["SECRET_KEY"])
+    payload = _decode_token(token, current_app.config["JWT_SECRET_KEY"])
     with session_scope() as session:
         user = session.get(AppUser, payload.get("user_id"))
         if user is None or not user.is_active:
@@ -146,7 +146,7 @@ def login(payload: dict[str, Any]) -> dict[str, Any]:
             raise ApiError(401, "invalid_credentials", str(exc)) from exc
         session.expunge(user)
 
-    token, expires_at = create_token(user, current_app.config["SECRET_KEY"])
+    token, expires_at = create_token(user, current_app.config["JWT_SECRET_KEY"])
     return {
         "token": token,
         "token_type": "Bearer",

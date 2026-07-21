@@ -11,6 +11,7 @@ from app.db import session_scope
 from app.jobs import get_job_queue, set_job_queue
 from app.models import Finding, FindingGroup, Run, RunSummary
 from app.services import create_account, enqueue_scan, run_scan
+from app.services.scan_service import ScanError
 from sqlalchemy import select
 
 pytestmark = pytest.mark.integration
@@ -154,6 +155,36 @@ def test_enqueue_scan_returns_before_the_job_runs(db_session, job_queue_spy) -> 
         assert run is not None
         assert run.status == "completed"
         assert run.composite_score is not None
+
+
+class _RejectingJobQueue:
+    """Simulates a queue that refuses the job (pool exhausted/shut down) —
+    submit() raises instead of accepting it."""
+
+    def submit(self, fn: Callable[[], None]) -> None:
+        raise RuntimeError("queue is shut down")
+
+
+def test_enqueue_scan_marks_run_failed_when_submission_itself_fails(db_session) -> None:
+    """Without a guard here, a queue that rejects the job leaves the Run
+    permanently stuck `queued` — nothing would ever call execute_scan to move
+    it out of that state, so a Runs-page poller would spin on a job that was
+    never actually accepted. enqueue_scan must instead transition the row to
+    `failed` and surface the failure to its own caller."""
+    account = _create_committed_file_account(db_session, name="Acme Corp (rejected)")
+    original = get_job_queue()
+    set_job_queue(_RejectingJobQueue())
+    try:
+        with pytest.raises(ScanError, match="Failed to enqueue scan"):
+            enqueue_scan(account.id)
+    finally:
+        set_job_queue(original)
+
+    with session_scope() as session:
+        run = session.scalars(select(Run).where(Run.account_id == account.id)).one()
+        assert run.status == "failed"
+        assert run.error_message is not None and "queue is shut down" in run.error_message
+        assert run.finished_at is not None
 
 
 def test_enqueue_scan_real_threading_executor_drives_it_to_completion(db_session) -> None:

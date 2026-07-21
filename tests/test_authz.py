@@ -78,13 +78,28 @@ def _matrix() -> list[tuple[str, str, str, dict]]:
         ("POST", f"/findings/{_BOGUS}/accept-risk", "admin", {"reason": "x"}),
         ("POST", f"/findings/{_BOGUS}/comment", "analyst", {"body": "x"}),
         ("POST", f"/findings/{_BOGUS}/assign", "analyst", {"assignee_id": "me"}),
-        ("POST", "/findings/bulk/transition", "analyst", {"group_ids": "", "to_status": "investigating"}),
+        (
+            "POST",
+            "/findings/bulk/transition",
+            "analyst",
+            {"group_ids": "", "to_status": "investigating"},
+        ),
         ("POST", "/findings/bulk/assign", "analyst", {"group_ids": "", "assignee_id": "me"}),
         ("POST", "/findings/bulk/suppress", "analyst", {"group_ids": "", "reason": "x"}),
         ("POST", "/findings/bulk/accept-risk", "admin", {"group_ids": "", "reason": "x"}),
-        ("POST", f"/findings/{_BOGUS}/ticket", "analyst", {"target_id": "1", "title": "x", "body": "x"}),
+        (
+            "POST",
+            f"/findings/{_BOGUS}/ticket",
+            "analyst",
+            {"target_id": "1", "title": "x", "body": "x"},
+        ),
         ("GET", "/settings/users", "admin", {}),
-        ("POST", "/settings/users", "admin", {"email": "", "display_name": "", "role": "read_only", "password": ""}),
+        (
+            "POST",
+            "/settings/users",
+            "admin",
+            {"email": "", "display_name": "", "role": "read_only", "password": ""},
+        ),
         ("POST", f"/settings/users/{_BOGUS}/role", "admin", {"role": "analyst"}),
         ("POST", f"/settings/users/{_BOGUS}/active", "admin", {"is_active": "0"}),
         ("GET", "/settings/integrations", "admin", {}),
@@ -95,20 +110,34 @@ def _matrix() -> list[tuple[str, str, str, dict]]:
 
 
 _MATRIX_IDS = [
-    "connect", "scan", "schedule-save", "schedule-delete", "schedule-run-now",
-    "transition", "suppress", "accept-risk", "comment", "assign",
-    "bulk-transition", "bulk-assign", "bulk-suppress", "bulk-accept-risk",
+    "connect",
+    "scan",
+    "schedule-save",
+    "schedule-delete",
+    "schedule-run-now",
+    "transition",
+    "suppress",
+    "accept-risk",
+    "comment",
+    "assign",
+    "bulk-transition",
+    "bulk-assign",
+    "bulk-suppress",
+    "bulk-accept-risk",
     "ticket",
-    "settings-users-list", "settings-users-create", "settings-users-role", "settings-users-active",
-    "settings-integrations-list", "settings-integrations-create",
-    "settings-integrations-toggle", "settings-integrations-delete",
+    "settings-users-list",
+    "settings-users-create",
+    "settings-users-role",
+    "settings-users-active",
+    "settings-integrations-list",
+    "settings-integrations-create",
+    "settings-integrations-toggle",
+    "settings-integrations-delete",
 ]
 
 
 @pytest.mark.parametrize("role", _ROLES)
-@pytest.mark.parametrize(
-    ("idx",), [(i,) for i in range(len(_MATRIX_IDS))], ids=_MATRIX_IDS
-)
+@pytest.mark.parametrize(("idx",), [(i,) for i in range(len(_MATRIX_IDS))], ids=_MATRIX_IDS)
 def test_route_x_role_matrix(client, db_session, role, idx) -> None:
     _seed(db_session)
     method, path, minimum, data = _matrix()[idx]
@@ -125,9 +154,7 @@ def test_route_x_role_matrix(client, db_session, role, idx) -> None:
             f"{role} (>= {minimum}) was blocked from {method} {path}, expected pass-through"
         )
     else:
-        assert resp.status_code == 403, (
-            f"{role} (< {minimum}) was NOT blocked from {method} {path}"
-        )
+        assert resp.status_code == 403, f"{role} (< {minimum}) was NOT blocked from {method} {path}"
 
 
 def test_403_writes_an_access_denied_audit_event(client, db_session) -> None:
@@ -281,8 +308,11 @@ def test_route_blocks_demoting_the_last_admin(client, db_session) -> None:
 
 def test_route_allows_deactivating_a_non_last_admin(client, db_session) -> None:
     second_admin = create_user(
-        db_session, email="second-admin@x.local", display_name="Second Admin",
-        role="admin", password="a-long-password",
+        db_session,
+        email="second-admin@x.local",
+        display_name="Second Admin",
+        role="admin",
+        password="a-long-password",
     )
     db_session.commit()  # route layer opens its own connection to the same file
     _login(client, "admin")
@@ -295,8 +325,11 @@ def test_route_allows_deactivating_a_non_last_admin(client, db_session) -> None:
 
 def test_route_allows_demoting_a_non_last_admin(client, db_session) -> None:
     second_admin = create_user(
-        db_session, email="second-admin@x.local", display_name="Second Admin",
-        role="admin", password="a-long-password",
+        db_session,
+        email="second-admin@x.local",
+        display_name="Second Admin",
+        role="admin",
+        password="a-long-password",
     )
     db_session.commit()  # route layer opens its own connection to the same file
     _login(client, "admin")

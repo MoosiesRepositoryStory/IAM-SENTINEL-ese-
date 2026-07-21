@@ -69,7 +69,9 @@ def authenticate(session: Session, email: str, password: str) -> AppUser:
     return user
 
 
-def change_password(session: Session, user: AppUser, current_password: str, new_password: str) -> None:
+def change_password(
+    session: Session, user: AppUser, current_password: str, new_password: str
+) -> None:
     """Self-service password change (§10.3, Phase 4 Slice 3) — any
     authenticated user, not just admins; requires the current password so a
     hijacked/left-open session can't silently lock out the real owner.

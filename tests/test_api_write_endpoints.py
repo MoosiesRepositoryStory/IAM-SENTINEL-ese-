@@ -117,9 +117,12 @@ def test_connect_account_upload_method(client, db_session, job_queue_spy) -> Non
 
     _run_jobs(job_queue_spy)
     with session_scope() as session:
-        assert session.scalars(
-            select(FindingGroup).where(FindingGroup.account_id == body["account_id"])
-        ).first() is not None
+        assert (
+            session.scalars(
+                select(FindingGroup).where(FindingGroup.account_id == body["account_id"])
+            ).first()
+            is not None
+        )
 
 
 def test_connect_account_with_schedule(client, db_session, job_queue_spy) -> None:
@@ -201,9 +204,7 @@ def test_save_and_delete_schedule(client, db_session) -> None:
     assert body["enabled"] is True
     assert db_session.scalars(select(Schedule)).one().account_id == seeded["account_id"]
 
-    resp2 = client.delete(
-        f"/api/v1/accounts/{seeded['account_id']}/schedule", headers=_auth(token)
-    )
+    resp2 = client.delete(f"/api/v1/accounts/{seeded['account_id']}/schedule", headers=_auth(token))
     assert resp2.status_code == 204
     assert db_session.scalars(select(Schedule)).first() is None
 
@@ -276,7 +277,8 @@ def test_invalid_transition_is_409(client, db_session) -> None:
 def test_transition_not_found(client, db_session) -> None:
     token = _token(client, "analyst")
     resp = client.post(
-        f"/api/v1/findings/{_BOGUS}/transition", json={"to_status": "investigating"},
+        f"/api/v1/findings/{_BOGUS}/transition",
+        json={"to_status": "investigating"},
         headers=_auth(token),
     )
     assert resp.status_code == 404
@@ -290,7 +292,8 @@ def test_suppress_is_analyst_but_accept_risk_is_admin(client, db_session) -> Non
     analyst_token = _token(client, "analyst")
     suppress = client.post(
         f"/api/v1/findings/{seeded['group_id']}/suppress",
-        json={"reason": "known noise"}, headers=_auth(analyst_token),
+        json={"reason": "known noise"},
+        headers=_auth(analyst_token),
     )
     assert suppress.status_code == 200
     assert suppress.get_json()["group"]["current_status"] == "suppressed"
@@ -298,7 +301,8 @@ def test_suppress_is_analyst_but_accept_risk_is_admin(client, db_session) -> Non
     admin_token = _token(client, "admin")
     accept = client.post(
         f"/api/v1/findings/{seeded['group_id']}/accept-risk",
-        json={"reason": "tracked elsewhere"}, headers=_auth(admin_token),
+        json={"reason": "tracked elsewhere"},
+        headers=_auth(admin_token),
     )
     assert accept.status_code == 409  # already suppressed — not open anymore
 
@@ -308,7 +312,8 @@ def test_accept_risk_requires_admin(client, db_session) -> None:
     token = _token(client, "analyst")
     resp = client.post(
         f"/api/v1/findings/{seeded['group_id']}/accept-risk",
-        json={"reason": "tracked elsewhere"}, headers=_auth(token),
+        json={"reason": "tracked elsewhere"},
+        headers=_auth(token),
     )
     assert resp.status_code == 403
 
@@ -317,7 +322,8 @@ def test_suppress_empty_reason_rejected(client, db_session) -> None:
     seeded = _seed(db_session)
     token = _token(client, "analyst")
     resp = client.post(
-        f"/api/v1/findings/{seeded['group_id']}/suppress", json={"reason": ""},
+        f"/api/v1/findings/{seeded['group_id']}/suppress",
+        json={"reason": ""},
         headers=_auth(token),
     )
     assert resp.status_code == 400
@@ -331,14 +337,16 @@ def test_reopening_accepted_risk_via_transition_revokes_the_exception(client, db
     admin_token = _token(client, "admin")
     accept = client.post(
         f"/api/v1/findings/{seeded['group_id']}/accept-risk",
-        json={"reason": "tracked elsewhere", "expires_at": "2099-01-01"}, headers=_auth(admin_token),
+        json={"reason": "tracked elsewhere", "expires_at": "2099-01-01"},
+        headers=_auth(admin_token),
     )
     assert accept.status_code == 200
     assert accept.get_json()["group"]["current_status"] == "accepted_risk"
 
     analyst_token = _token(client, "analyst")
     reopen = client.post(
-        f"/api/v1/findings/{seeded['group_id']}/transition", json={"to_status": "open"},
+        f"/api/v1/findings/{seeded['group_id']}/transition",
+        json={"to_status": "open"},
         headers=_auth(analyst_token),
     )
     assert reopen.status_code == 200
@@ -355,7 +363,8 @@ def test_comment(client, db_session) -> None:
     seeded = _seed(db_session)
     token = _token(client, "analyst")
     resp = client.post(
-        f"/api/v1/findings/{seeded['group_id']}/comment", json={"body": "worth a look"},
+        f"/api/v1/findings/{seeded['group_id']}/comment",
+        json={"body": "worth a look"},
         headers=_auth(token),
     )
     assert resp.status_code == 200
@@ -367,7 +376,8 @@ def test_comment_empty_body_rejected(client, db_session) -> None:
     seeded = _seed(db_session)
     token = _token(client, "analyst")
     resp = client.post(
-        f"/api/v1/findings/{seeded['group_id']}/comment", json={"body": "   "},
+        f"/api/v1/findings/{seeded['group_id']}/comment",
+        json={"body": "   "},
         headers=_auth(token),
     )
     assert resp.status_code == 400
@@ -377,14 +387,16 @@ def test_assign_to_me_and_unassign(client, db_session) -> None:
     seeded = _seed(db_session)
     token = _token(client, "analyst")
     resp = client.post(
-        f"/api/v1/findings/{seeded['group_id']}/assign", json={"assignee_id": "me"},
+        f"/api/v1/findings/{seeded['group_id']}/assign",
+        json={"assignee_id": "me"},
         headers=_auth(token),
     )
     assert resp.status_code == 200
     assert resp.get_json()["assignee_name"] == "Demo Analyst"
 
     resp2 = client.post(
-        f"/api/v1/findings/{seeded['group_id']}/assign", json={"assignee_id": ""},
+        f"/api/v1/findings/{seeded['group_id']}/assign",
+        json={"assignee_id": ""},
         headers=_auth(token),
     )
     assert resp2.status_code == 200
@@ -429,7 +441,8 @@ def test_bulk_accept_risk_stays_admin_only_regardless_of_selection(client, db_se
     token = _token(client, "analyst")
     resp = client.post(
         "/api/v1/findings/bulk/accept-risk",
-        json={"group_ids": [seeded["group_id"]], "reason": "x"}, headers=_auth(token),
+        json={"group_ids": [seeded["group_id"]], "reason": "x"},
+        headers=_auth(token),
     )
     assert resp.status_code == 403
     group = db_session.get(FindingGroup, seeded["group_id"])
@@ -441,7 +454,8 @@ def test_bulk_assign(client, db_session) -> None:
     token = _token(client, "analyst")
     resp = client.post(
         "/api/v1/findings/bulk/assign",
-        json={"group_ids": [seeded["group_id"]], "assignee_id": "me"}, headers=_auth(token),
+        json={"group_ids": [seeded["group_id"]], "assignee_id": "me"},
+        headers=_auth(token),
     )
     assert resp.status_code == 200
     assert resp.get_json()["succeeded"] == [seeded["group_id"]]
@@ -452,7 +466,8 @@ def test_bulk_suppress(client, db_session) -> None:
     token = _token(client, "analyst")
     resp = client.post(
         "/api/v1/findings/bulk/suppress",
-        json={"group_ids": [seeded["group_id"]], "reason": "batch noise"}, headers=_auth(token),
+        json={"group_ids": [seeded["group_id"]], "reason": "batch noise"},
+        headers=_auth(token),
     )
     assert resp.status_code == 200
     assert resp.get_json()["succeeded"] == [seeded["group_id"]]
@@ -528,23 +543,49 @@ def _matrix() -> list[tuple[str, str, dict, str]]:
         ("PUT", f"/api/v1/accounts/{_BOGUS}/schedule", {"cron": "0 2 * * *"}, "analyst"),
         ("DELETE", f"/api/v1/accounts/{_BOGUS}/schedule", {}, "analyst"),
         ("POST", f"/api/v1/accounts/{_BOGUS}/schedule/run-now", {}, "analyst"),
-        ("POST", f"/api/v1/findings/{_BOGUS}/transition", {"to_status": "investigating"}, "analyst"),
+        (
+            "POST",
+            f"/api/v1/findings/{_BOGUS}/transition",
+            {"to_status": "investigating"},
+            "analyst",
+        ),
         ("POST", f"/api/v1/findings/{_BOGUS}/suppress", {"reason": "x"}, "analyst"),
         ("POST", f"/api/v1/findings/{_BOGUS}/accept-risk", {"reason": "x"}, "admin"),
         ("POST", f"/api/v1/findings/{_BOGUS}/comment", {"body": "x"}, "analyst"),
         ("POST", f"/api/v1/findings/{_BOGUS}/assign", {"assignee_id": "me"}, "analyst"),
-        ("POST", "/api/v1/findings/bulk/transition", {"group_ids": [], "to_status": "investigating"}, "analyst"),
+        (
+            "POST",
+            "/api/v1/findings/bulk/transition",
+            {"group_ids": [], "to_status": "investigating"},
+            "analyst",
+        ),
         ("POST", "/api/v1/findings/bulk/assign", {"group_ids": [], "assignee_id": "me"}, "analyst"),
         ("POST", "/api/v1/findings/bulk/suppress", {"group_ids": [], "reason": "x"}, "analyst"),
         ("POST", "/api/v1/findings/bulk/accept-risk", {"group_ids": [], "reason": "x"}, "admin"),
-        ("POST", f"/api/v1/findings/{_BOGUS}/ticket", {"target_id": 1, "title": "x", "body": "x"}, "analyst"),
+        (
+            "POST",
+            f"/api/v1/findings/{_BOGUS}/ticket",
+            {"target_id": 1, "title": "x", "body": "x"},
+            "analyst",
+        ),
     ]
 
 
 _MATRIX_IDS = [
-    "connect", "scan", "schedule-save", "schedule-delete", "schedule-run-now",
-    "transition", "suppress", "accept-risk", "comment", "assign",
-    "bulk-transition", "bulk-assign", "bulk-suppress", "bulk-accept-risk",
+    "connect",
+    "scan",
+    "schedule-save",
+    "schedule-delete",
+    "schedule-run-now",
+    "transition",
+    "suppress",
+    "accept-risk",
+    "comment",
+    "assign",
+    "bulk-transition",
+    "bulk-assign",
+    "bulk-suppress",
+    "bulk-accept-risk",
     "ticket",
 ]
 

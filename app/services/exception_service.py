@@ -78,7 +78,11 @@ def create_exception(
     """
     if kind not in EXCEPTION_STATUSES:
         raise ExceptionError(f"Invalid exception kind: {kind!r}")
-    if kind == "accepted_risk" and actor_role is not None and not rbac.at_least(actor_role, "admin"):
+    if (
+        kind == "accepted_risk"
+        and actor_role is not None
+        and not rbac.at_least(actor_role, "admin")
+    ):
         raise rbac.PermissionDenied("Only admins may accept risk on a finding.")
     clean_reason = (reason or "").strip()
     if not clean_reason:
@@ -144,7 +148,9 @@ def expire_exceptions(session: Session, *, today: date | None = None) -> list[in
         exc.revoked_at = now_iso()
         group = session.get(FindingGroup, exc.group_id)
         if group is not None and group.current_status in EXCEPTION_STATUSES:
-            transition(session, group, "open", actor_id=None, note="Exception expired, auto-reopened")
+            transition(
+                session, group, "open", actor_id=None, note="Exception expired, auto-reopened"
+            )
             reopened.append(group.id)
     if candidates:
         session.flush()

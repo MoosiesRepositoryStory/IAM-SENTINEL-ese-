@@ -45,7 +45,11 @@ def _active_finding_counts(session: Session, run_id: int) -> dict[str, int]:
 def list_checks(session: Session | None = None, run_id: int | None = None) -> list[CheckCatalogRow]:
     """Every registered check, alphabetical by id. ``finding_count`` is 0 for
     every row when no ``(session, run_id)`` is given (e.g. pre-scan)."""
-    counts = _active_finding_counts(session, run_id) if session is not None and run_id is not None else {}
+    counts = (
+        _active_finding_counts(session, run_id)
+        if session is not None and run_id is not None
+        else {}
+    )
     rows = [
         CheckCatalogRow(
             check_id=check.meta.id,

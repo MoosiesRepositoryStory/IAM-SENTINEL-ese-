@@ -60,9 +60,10 @@ def list_run_findings(
     latest completed run") — the API's ``/runs/{id}/findings`` (Phase 4
     Slice 4a). Riskiest first, same order as the export path
     (``export_service._run_payload``)."""
-    total = session.scalar(
-        select(func.count()).select_from(Finding).where(Finding.run_id == run_id)
-    ) or 0
+    total = (
+        session.scalar(select(func.count()).select_from(Finding).where(Finding.run_id == run_id))
+        or 0
+    )
     rows = list(
         session.scalars(
             select(Finding)

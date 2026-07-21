@@ -4,6 +4,7 @@ Revision ID: 5ea4da80d1b3
 Revises: 30d8a25ac98c
 Create Date: 2026-07-19 17:54:18.258502
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -13,8 +14,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '5ea4da80d1b3'
-down_revision: str | None = '30d8a25ac98c'
+revision: str = "5ea4da80d1b3"
+down_revision: str | None = "30d8a25ac98c"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

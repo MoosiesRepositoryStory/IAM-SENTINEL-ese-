@@ -30,7 +30,10 @@ def test_login_issues_a_bearer_token(client) -> None:
     body = resp.get_json()
     assert body["token_type"] == "Bearer"
     assert body["user"] == {
-        "id": 1, "email": "admin@example.com", "display_name": "Demo Admin", "role": "admin",
+        "id": 1,
+        "email": "admin@example.com",
+        "display_name": "Demo Admin",
+        "role": "admin",
     }
     # A real, decodable JWT carrying the documented claims.
     payload = jwt.decode(body["token"], options={"verify_signature": False})
@@ -101,7 +104,12 @@ def test_garbage_token_rejected(client) -> None:
 def test_token_signed_with_wrong_key_rejected(client) -> None:
     now = datetime.now(UTC)
     bad_token = jwt.encode(
-        {"user_id": 1, "role": "admin", "iat": int(now.timestamp()), "exp": int((now + timedelta(hours=1)).timestamp())},
+        {
+            "user_id": 1,
+            "role": "admin",
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(hours=1)).timestamp()),
+        },
         "wrong-secret-key",
         algorithm=ALGORITHM,
     )
@@ -114,11 +122,12 @@ def test_expired_token_rejected(client) -> None:
     with client.application.app_context():
         from flask import current_app
 
-        secret = current_app.config["SECRET_KEY"]
+        secret = current_app.config["JWT_SECRET_KEY"]
     now = datetime.now(UTC)
     expired = jwt.encode(
         {
-            "user_id": 1, "role": "admin",
+            "user_id": 1,
+            "role": "admin",
             "iat": int((now - timedelta(hours=13)).timestamp()),
             "exp": int((now - timedelta(hours=1)).timestamp()),
         },

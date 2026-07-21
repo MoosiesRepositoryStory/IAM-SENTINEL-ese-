@@ -34,7 +34,10 @@ def test_unknown_method_rejected(db_session) -> None:
 def test_assume_role_requires_well_formed_arn(db_session) -> None:
     with pytest.raises(ConnectError, match="Role ARN must look like"):
         connect_account(
-            db_session, name="Acme", method="assume_role", thresholds=Thresholds(),
+            db_session,
+            name="Acme",
+            method="assume_role",
+            thresholds=Thresholds(),
             role_arn="not-an-arn",
         )
 
@@ -53,7 +56,10 @@ def test_upload_requires_at_least_one_file(db_session) -> None:
 def test_connect_rejected_for_analyst_actor_role(db_session) -> None:
     with pytest.raises(PermissionDenied):
         connect_account(
-            db_session, name="Acme", method="demo", thresholds=Thresholds(),
+            db_session,
+            name="Acme",
+            method="demo",
+            thresholds=Thresholds(),
             actor_role="analyst",
         )
     assert db_session.scalars(select(Account)).all() == []
@@ -62,14 +68,20 @@ def test_connect_rejected_for_analyst_actor_role(db_session) -> None:
 def test_connect_rejected_for_read_only_actor_role(db_session) -> None:
     with pytest.raises(PermissionDenied):
         connect_account(
-            db_session, name="Acme", method="demo", thresholds=Thresholds(),
+            db_session,
+            name="Acme",
+            method="demo",
+            thresholds=Thresholds(),
             actor_role="read_only",
         )
 
 
 def test_connect_allowed_for_admin_actor_role(db_session) -> None:
     account_id = connect_account(
-        db_session, name="Acme", method="demo", thresholds=Thresholds(),
+        db_session,
+        name="Acme",
+        method="demo",
+        thresholds=Thresholds(),
         actor_role="admin",
     )
     assert db_session.get(Account, account_id) is not None
@@ -94,8 +106,12 @@ def test_demo_method_creates_a_moto_account(db_session) -> None:
 
 def test_assume_role_method_maps_to_moto_and_records_metadata(db_session) -> None:
     account_id = connect_account(
-        db_session, name="Acme Prod", method="assume_role", thresholds=Thresholds(),
-        role_arn="arn:aws:iam::123456789012:role/SentinelReadOnly", external_id="a1b2c3d4",
+        db_session,
+        name="Acme Prod",
+        method="assume_role",
+        thresholds=Thresholds(),
+        role_arn="arn:aws:iam::123456789012:role/SentinelReadOnly",
+        external_id="a1b2c3d4",
     )
     account = db_session.get(Account, account_id)
     assert account is not None
@@ -107,7 +123,10 @@ def test_assume_role_method_maps_to_moto_and_records_metadata(db_session) -> Non
 
 def test_upload_method_creates_a_file_account(db_session) -> None:
     account_id = connect_account(
-        db_session, name="Acme Files", method="upload", thresholds=Thresholds(),
+        db_session,
+        name="Acme Files",
+        method="upload",
+        thresholds=Thresholds(),
         inventory_text=(_SAMPLES / "users.csv").read_text(encoding="utf-8"),
         policies_json=(_SAMPLES / "policies.json").read_text(encoding="utf-8"),
         logs_text=(_SAMPLES / "auth.log").read_text(encoding="utf-8"),
@@ -120,7 +139,10 @@ def test_upload_method_creates_a_file_account(db_session) -> None:
 
 def test_list_accounts_reflects_no_run_before_a_scan_is_enqueued(db_session) -> None:
     connect_account(
-        db_session, name="Acme Files", method="upload", thresholds=Thresholds(),
+        db_session,
+        name="Acme Files",
+        method="upload",
+        thresholds=Thresholds(),
         inventory_text=(_SAMPLES / "users.csv").read_text(encoding="utf-8"),
     )
     rows = list_accounts(db_session)

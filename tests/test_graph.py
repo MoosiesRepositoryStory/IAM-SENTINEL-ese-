@@ -8,7 +8,9 @@ from app.domain.records import NormalizedDataset
 from tests.conftest import admin_doc, policy, principal
 
 
-def _trust(arns: list[str] | None = None, *, service: str | None = None, wildcard: bool = False) -> dict:
+def _trust(
+    arns: list[str] | None = None, *, service: str | None = None, wildcard: bool = False
+) -> dict:
     if wildcard:
         principal_field: object = "*"
     elif service:
@@ -153,11 +155,7 @@ def test_create_access_key_on_another_admin_records_the_shorter_path() -> None:
 
 def test_no_escalation_primitives_means_no_can_reach_admin() -> None:
     ds = NormalizedDataset(
-        principals=[
-            principal(
-                "user/alice", username="alice", attached_policy_uids=["ReadOnly"]
-            )
-        ],
+        principals=[principal("user/alice", username="alice", attached_policy_uids=["ReadOnly"])],
         policies=[
             policy(
                 "ReadOnly",
@@ -178,7 +176,12 @@ def test_assumable_admin_role_raises_blast_radius_and_reachable_counts() -> None
     ds = NormalizedDataset(
         principals=[
             principal("user/bob", username="bob"),
-            _role("role/Break-Glass", _trust(["user/bob"]), username="Break-Glass", attached_policy_uids=["Admin"]),
+            _role(
+                "role/Break-Glass",
+                _trust(["user/bob"]),
+                username="Break-Glass",
+                attached_policy_uids=["Admin"],
+            ),
         ],
         policies=[policy("Admin", admin_doc())],
     )

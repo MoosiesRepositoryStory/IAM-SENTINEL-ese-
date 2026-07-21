@@ -38,6 +38,7 @@ def _scanned_account(session) -> int:
 
 # ---- pure parsing (no DB) ----
 
+
 def test_parse_sort_default_when_empty() -> None:
     assert parse_sort(None) == [SortKey("risk", True), SortKey("severity", True)]
     assert parse_sort("") == [SortKey("risk", True), SortKey("severity", True)]
@@ -69,6 +70,7 @@ def test_empty_filters_not_active() -> None:
 
 
 # ---- against a real scan ----
+
 
 def test_query_returns_latest_run_findings(db_session) -> None:
     account_id = _scanned_account(db_session)

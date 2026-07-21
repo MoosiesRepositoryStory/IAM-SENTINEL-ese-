@@ -48,6 +48,7 @@ def _actor(session) -> AppUser:
 
 # ---- pure state-machine shape ----
 
+
 def test_transition_table_is_self_consistent() -> None:
     # Every UI action target is an allowed transition and vice-versa.
     for status, targets in ALLOWED_TRANSITIONS.items():
@@ -65,6 +66,7 @@ def test_suppressed_offers_only_reopen() -> None:
 
 
 # ---- transitions against real findings ----
+
 
 def test_valid_transition_persists_and_records_history(db_session) -> None:
     _scan(db_session)
@@ -140,6 +142,7 @@ def test_accept_risk_path(db_session) -> None:
 
 
 # ---- drawer assembly ----
+
 
 def test_get_finding_detail_shapes_payload(db_session) -> None:
     _scan(db_session)

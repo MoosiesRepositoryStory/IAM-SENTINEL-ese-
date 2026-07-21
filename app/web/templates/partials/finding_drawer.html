@@ -1,27 +1,19 @@
 {# Finding detail drawer (§8.8). Injected into #drawer by htmx. Plain-JS tabs +
-   close (see findings.html) so it works as htmx-swapped content. #}
+   close (see findings.html) so it works as htmx-swapped content.
 
-{% if oob_status %}
-{# data-status/data-actions mirror the <tr>'s own attributes (findings_table.html)
-   so app.js can resync them after this OOB swap — otherwise the row's
-   data-actions (used to build the §8.3 context menu) goes stale after any
-   single-row mutation until the next full-table render. #}
-<td id="row-status-{{ d.group.id }}" hx-swap-oob="true"
-    data-status="{{ d.group.current_status }}"
-    data-actions='{{ available_actions(d.group.current_status, current_user.role) | tojson }}'>
-  <span class="status st-{{ d.group.current_status }}">{{ d.group.current_status | replace('_', ' ') }}</span>
-  {% if d.exception %}
-  <span class="exc-badge" title="{{ d.exception.reason }}{{ ' · Expires ' ~ d.exception.expires_at if d.exception.expires_at else ' · No expiry' }}">⏳</span>
-  {% endif %}
-</td>
-{% endif %}
-
-{% if oob_assignee %}
-<td id="row-assignee-{{ d.group.id }}" hx-swap-oob="true">
-  {% if d.assignee_name %}<span class="assignee"><span class="avatar">{{ d.assignee_name.split()[:2] | map('first') | join | upper }}</span>{{ d.assignee_name }}</span>
-  {% else %}<span class="muted">—</span>{% endif %}
-</td>
-{% endif %}
+   The OOB swap blocks (row-status/row-assignee) are rendered at the END of
+   this template, after </aside>, not here at the top — htmx 2.0.4 corrupts
+   form-element association (a form-associated descendant's `.form`/
+   `closest('form')` silently becomes null, so its submit button stops
+   firing) when an hx-swap-oob element PRECEDES a <form> later in the same
+   response. Confirmed via a minimal reproduction outside this app entirely
+   (vendored htmx.min.js + a bare OOB-then-form response, no Alpine, no rest
+   of the page) — moving the OOB content after the main swap target's
+   content is what actually fixes it, not anything about ``.exc-form``
+   itself. This bit every mutation that both re-renders the footer's
+   suppress/accept-risk forms AND passes oob_status/oob_assignee — i.e.
+   suppress silently stopped working the moment it followed ANY prior
+   transition or assignment in the same drawer session. #}
 
 {% set f = d.finding %}
 {% set active_tab = focus_tab | default('overview', true) %}
@@ -363,3 +355,25 @@ Resource: {{ f.resource }}{% endif %}
   </div>
   {% endif %}
 </aside>
+
+{% if oob_status %}
+{# data-status/data-actions mirror the <tr>'s own attributes (findings_table.html)
+   so app.js can resync them after this OOB swap — otherwise the row's
+   data-actions (used to build the §8.3 context menu) goes stale after any
+   single-row mutation until the next full-table render. #}
+<td id="row-status-{{ d.group.id }}" hx-swap-oob="true"
+    data-status="{{ d.group.current_status }}"
+    data-actions='{{ available_actions(d.group.current_status, current_user.role) | tojson }}'>
+  <span class="status st-{{ d.group.current_status }}">{{ d.group.current_status | replace('_', ' ') }}</span>
+  {% if d.exception %}
+  <span class="exc-badge" title="{{ d.exception.reason }}{{ ' · Expires ' ~ d.exception.expires_at if d.exception.expires_at else ' · No expiry' }}">⏳</span>
+  {% endif %}
+</td>
+{% endif %}
+
+{% if oob_assignee %}
+<td id="row-assignee-{{ d.group.id }}" hx-swap-oob="true">
+  {% if d.assignee_name %}<span class="assignee"><span class="avatar">{{ d.assignee_name.split()[:2] | map('first') | join | upper }}</span>{{ d.assignee_name }}</span>
+  {% else %}<span class="muted">—</span>{% endif %}
+</td>
+{% endif %}

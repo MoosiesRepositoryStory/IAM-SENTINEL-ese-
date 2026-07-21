@@ -54,6 +54,7 @@ def _actor(session) -> AppUser:
 
 # ---- create_exception ----
 
+
 def test_suppress_requires_reason(db_session) -> None:
     _scan(db_session)
     group = _groups(db_session)[0]
@@ -82,8 +83,12 @@ def test_accept_risk_with_expiry(db_session) -> None:
     group = _groups(db_session)[0]
     actor = _actor(db_session)
     exc = create_exception(
-        db_session, group, kind="accepted_risk", reason="Tracked in JIRA-42",
-        actor_id=actor.id, expires_at="2099-01-01",
+        db_session,
+        group,
+        kind="accepted_risk",
+        reason="Tracked in JIRA-42",
+        actor_id=actor.id,
+        expires_at="2099-01-01",
     )
     assert group.current_status == "accepted_risk"
     assert exc.expires_at == "2099-01-01"
@@ -95,7 +100,11 @@ def test_invalid_expiry_rejected(db_session) -> None:
     actor = _actor(db_session)
     with pytest.raises(ExceptionError):
         create_exception(
-            db_session, group, kind="accepted_risk", reason="x", actor_id=actor.id,
+            db_session,
+            group,
+            kind="accepted_risk",
+            reason="x",
+            actor_id=actor.id,
             expires_at="not-a-date",
         )
     assert group.current_status == "open"
@@ -114,8 +123,12 @@ def test_accept_risk_rejected_for_analyst_actor_role(db_session) -> None:
     actor = _actor(db_session)
     with pytest.raises(PermissionDenied):
         create_exception(
-            db_session, group, kind="accepted_risk", reason="x",
-            actor_id=actor.id, actor_role="analyst",
+            db_session,
+            group,
+            kind="accepted_risk",
+            reason="x",
+            actor_id=actor.id,
+            actor_role="analyst",
         )
     # Rejected before any transition — no partial state change.
     assert group.current_status == "open"
@@ -127,8 +140,12 @@ def test_accept_risk_allowed_for_admin_actor_role(db_session) -> None:
     group = _groups(db_session)[0]
     actor = _actor(db_session)
     exc = create_exception(
-        db_session, group, kind="accepted_risk", reason="Tracked in JIRA-42",
-        actor_id=actor.id, actor_role="admin",
+        db_session,
+        group,
+        kind="accepted_risk",
+        reason="Tracked in JIRA-42",
+        actor_id=actor.id,
+        actor_role="admin",
     )
     assert group.current_status == "accepted_risk"
     assert exc.reason == "Tracked in JIRA-42"
@@ -141,9 +158,7 @@ def test_accept_risk_actor_role_none_is_trusted_unchecked(db_session) -> None:
     _scan(db_session)
     group = _groups(db_session)[0]
     actor = _actor(db_session)
-    exc = create_exception(
-        db_session, group, kind="accepted_risk", reason="x", actor_id=actor.id
-    )
+    exc = create_exception(db_session, group, kind="accepted_risk", reason="x", actor_id=actor.id)
     assert group.current_status == "accepted_risk"
     assert exc is not None
 
@@ -155,8 +170,12 @@ def test_suppress_has_no_role_split_analyst_actor_role_allowed(db_session) -> No
     group = _groups(db_session)[0]
     actor = _actor(db_session)
     exc = create_exception(
-        db_session, group, kind="suppressed", reason="Known noise",
-        actor_id=actor.id, actor_role="analyst",
+        db_session,
+        group,
+        kind="suppressed",
+        reason="Known noise",
+        actor_id=actor.id,
+        actor_role="analyst",
     )
     assert group.current_status == "suppressed"
     assert exc.reason == "Known noise"
@@ -176,7 +195,9 @@ def test_cannot_suppress_a_non_open_finding(db_session) -> None:
     actor = _actor(db_session)
     create_exception(db_session, group, kind="suppressed", reason="first", actor_id=actor.id)
     with pytest.raises(InvalidTransition):
-        create_exception(db_session, group, kind="accepted_risk", reason="second", actor_id=actor.id)
+        create_exception(
+            db_session, group, kind="accepted_risk", reason="second", actor_id=actor.id
+        )
 
 
 def test_create_exception_writes_status_history(db_session) -> None:
@@ -195,6 +216,7 @@ def test_create_exception_writes_status_history(db_session) -> None:
 
 # ---- revoke_exception ----
 
+
 def test_revoke_closes_exception_and_reopens(db_session) -> None:
     _scan(db_session)
     group = _groups(db_session)[0]
@@ -202,7 +224,9 @@ def test_revoke_closes_exception_and_reopens(db_session) -> None:
     create_exception(db_session, group, kind="suppressed", reason="noise", actor_id=actor.id)
     revoke_exception(db_session, group, actor_id=actor.id)
     assert group.current_status == "open"
-    exc = db_session.scalars(select(FindingException).where(FindingException.group_id == group.id)).first()
+    exc = db_session.scalars(
+        select(FindingException).where(FindingException.group_id == group.id)
+    ).first()
     assert exc.revoked_at is not None
 
 
@@ -222,12 +246,17 @@ def test_revoke_with_no_active_exception_still_reopens(db_session) -> None:
 
 # ---- expire_exceptions ----
 
+
 def test_expire_exceptions_reopens_past_expiry(db_session) -> None:
     _scan(db_session)
     group = _groups(db_session)[0]
     actor = _actor(db_session)
     create_exception(
-        db_session, group, kind="accepted_risk", reason="temp", actor_id=actor.id,
+        db_session,
+        group,
+        kind="accepted_risk",
+        reason="temp",
+        actor_id=actor.id,
         expires_at="2020-01-01",
     )
     reopened = expire_exceptions(db_session, today=date(2026, 7, 14))
@@ -242,7 +271,11 @@ def test_expire_exceptions_leaves_future_expiry_alone(db_session) -> None:
     group = _groups(db_session)[0]
     actor = _actor(db_session)
     create_exception(
-        db_session, group, kind="accepted_risk", reason="temp", actor_id=actor.id,
+        db_session,
+        group,
+        kind="accepted_risk",
+        reason="temp",
+        actor_id=actor.id,
         expires_at="2099-01-01",
     )
     reopened = expire_exceptions(db_session, today=date(2026, 7, 14))
@@ -254,7 +287,9 @@ def test_expire_exceptions_ignores_no_expiry(db_session) -> None:
     _scan(db_session)
     group = _groups(db_session)[0]
     actor = _actor(db_session)
-    create_exception(db_session, group, kind="suppressed", reason="permanent noise", actor_id=actor.id)
+    create_exception(
+        db_session, group, kind="suppressed", reason="permanent noise", actor_id=actor.id
+    )
     reopened = expire_exceptions(db_session, today=date(2099, 1, 1))
     assert reopened == []
     assert group.current_status == "suppressed"
@@ -265,7 +300,11 @@ def test_expire_exceptions_writes_auto_reopened_history(db_session) -> None:
     group = _groups(db_session)[0]
     actor = _actor(db_session)
     create_exception(
-        db_session, group, kind="accepted_risk", reason="temp", actor_id=actor.id,
+        db_session,
+        group,
+        kind="accepted_risk",
+        reason="temp",
+        actor_id=actor.id,
         expires_at="2020-01-01",
     )
     expire_exceptions(db_session, today=date(2026, 7, 14))
@@ -286,7 +325,11 @@ def test_expire_exceptions_is_boundary_inclusive(db_session) -> None:
     group = _groups(db_session)[0]
     actor = _actor(db_session)
     create_exception(
-        db_session, group, kind="accepted_risk", reason="temp", actor_id=actor.id,
+        db_session,
+        group,
+        kind="accepted_risk",
+        reason="temp",
+        actor_id=actor.id,
         expires_at="2026-07-14",
     )
     reopened = expire_exceptions(db_session, today=date(2026, 7, 14))
@@ -300,12 +343,17 @@ def test_expire_exceptions_self_heals_stale_row(db_session) -> None:
     group = _groups(db_session)[0]
     actor = _actor(db_session)
     create_exception(
-        db_session, group, kind="accepted_risk", reason="temp", actor_id=actor.id,
+        db_session,
+        group,
+        kind="accepted_risk",
+        reason="temp",
+        actor_id=actor.id,
         expires_at="2020-01-01",
     )
     exc = db_session.scalars(select(FindingException)).first()
     # Simulate a manual reopen that bypassed revoke_exception.
     from app.services.workflow_service import transition
+
     transition(db_session, group, "open", actor_id=actor.id, note="manual reopen")
     assert exc.revoked_at is None  # stale: still marked active
 
@@ -315,6 +363,7 @@ def test_expire_exceptions_self_heals_stale_row(db_session) -> None:
 
 
 # ---- lookups ----
+
 
 def test_active_exception_and_batch_lookup(db_session) -> None:
     _scan(db_session)
@@ -341,13 +390,18 @@ def test_active_exception_none_after_revoke(db_session) -> None:
 
 # ---- drawer assembly ----
 
+
 def test_finding_detail_exposes_exception_info(db_session) -> None:
     _scan(db_session)
     group = _groups(db_session)[0]
     actor = _actor(db_session)
     create_exception(
-        db_session, group, kind="accepted_risk", reason="Tracked in JIRA-42",
-        actor_id=actor.id, expires_at="2099-01-01",
+        db_session,
+        group,
+        kind="accepted_risk",
+        reason="Tracked in JIRA-42",
+        actor_id=actor.id,
+        expires_at="2099-01-01",
     )
     detail = get_finding_detail(db_session, group.id)
     assert detail is not None

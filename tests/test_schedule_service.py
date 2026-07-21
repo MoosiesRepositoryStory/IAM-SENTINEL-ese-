@@ -53,7 +53,9 @@ def test_upsert_rejects_bad_cron_without_touching_any_row(db_session) -> None:
     upsert_schedule(db_session, account_id=account.id, cron="0 2 * * *", thresholds=Thresholds())
 
     with pytest.raises(ScheduleError, match="Invalid cron"):
-        upsert_schedule(db_session, account_id=account.id, cron="not a cron", thresholds=Thresholds())
+        upsert_schedule(
+            db_session, account_id=account.id, cron="not a cron", thresholds=Thresholds()
+        )
 
     # The pre-existing schedule must survive a rejected edit untouched.
     schedule = get_schedule(db_session, account.id)

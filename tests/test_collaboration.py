@@ -42,14 +42,16 @@ def _group(session) -> FindingGroup:
 
 
 def _user(session, name: str, role: str = "analyst") -> AppUser:
-    u = AppUser(email=f"{name}@x.io", display_name=name, password_hash="!", role=role,
-                is_active=True)
+    u = AppUser(
+        email=f"{name}@x.io", display_name=name, password_hash="!", role=role, is_active=True
+    )
     session.add(u)
     session.flush()
     return u
 
 
 # ---- comments ----
+
 
 def test_add_comment_persists(db_session) -> None:
     _scan(db_session)
@@ -75,6 +77,7 @@ def test_empty_comment_rejected(db_session) -> None:
 
 
 # ---- assignment ----
+
 
 def test_assign_sets_and_audits(db_session) -> None:
     _scan(db_session)
@@ -129,6 +132,7 @@ def test_active_users_excludes_inactive(db_session) -> None:
 
 
 # ---- unified activity timeline ----
+
 
 def test_activity_timeline_merges_status_comment_assignment(db_session) -> None:
     _scan(db_session)

@@ -36,6 +36,24 @@ def test_at_least_none_role_satisfies_nothing() -> None:
     assert at_least(None, "read_only") is False
 
 
+def test_public_mode_clamps_everything_above_read_only(monkeypatch) -> None:
+    monkeypatch.setenv("PUBLIC_MODE", "true")
+    assert at_least("admin", "admin") is False
+    assert at_least("admin", "analyst") is False
+    assert at_least("analyst", "analyst") is False
+
+
+def test_public_mode_leaves_read_only_capability_unaffected(monkeypatch) -> None:
+    monkeypatch.setenv("PUBLIC_MODE", "true")
+    assert at_least("admin", "read_only") is True
+    assert at_least("read_only", "read_only") is True
+
+
+def test_public_mode_off_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("PUBLIC_MODE", raising=False)
+    assert at_least("admin", "admin") is True
+
+
 def test_capability_matrix_matches_the_approved_design() -> None:
     """Pins the agreed matrix (§10.2) so a future edit that accidentally
     loosens a capability is caught here, not just in a route test."""

@@ -56,6 +56,12 @@ graph = ["networkx>=3.3"]
 # in app/ imports rq/redis/fakeredis; kept declared so the documented seam
 # is easy to pick up later, not because anything currently needs it.
 jobs = ["rq>=1.16", "redis>=5.0", "fakeredis>=2.23"]
+# Committed Playwright E2E suite (tests/e2e/, see its README) — a separate
+# extra rather than folded into `dev` because it needs a browser binary
+# (`playwright install chromium`) that a plain `pip install -e ".[dev]"`
+# doesn't pull in; the CI e2e job installs this on top of `dev` rather than
+# instead of it, since seeding + running the suite still needs boto3/moto.
+e2e = ["pytest-playwright>=0.5"]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
@@ -113,8 +119,16 @@ disallow_incomplete_defs = true
 minversion = "8.0"
 addopts = "-q --strict-markers"
 testpaths = ["tests"]
+# tests/e2e is a separate, browser-driven suite (its own README) that needs a
+# live server + seeded DB and the `e2e` extra (pytest-playwright + a browser
+# binary) — neither is present in the regular unit-test job, so it must never
+# be auto-collected by a bare `pytest -q` here. norecursedirs only prunes
+# automatic recursion, not an explicitly-given path, so the CI e2e job's
+# `pytest tests/e2e ...` still collects it normally.
+norecursedirs = [".*", "build", "dist", "*.egg", "node_modules", "e2e"]
 markers = [
     "integration: slower tests that touch the DB / adapters (deselect with -m 'not integration')",
+    "e2e: browser-driven end-to-end tests against a live server (see tests/e2e/README.md)",
 ]
 filterwarnings = [
     # The dev/test SECRET_KEY (config.py's "dev-insecure-change-me" default)

@@ -5,6 +5,7 @@ api.findings' finding_url)."""
 
 from __future__ import annotations
 
+import pytest
 from app.config import Settings
 
 
@@ -58,3 +59,74 @@ def test_create_app_leaves_server_name_unset_by_default(db_session, monkeypatch)
 
     app = create_app(start_background_jobs=False)
     assert app.config.get("SERVER_NAME") is None
+
+
+# ---- production secret-key hardening (fail-closed on insecure defaults) ----
+
+
+def _clear_secret_env(monkeypatch) -> None:
+    for var in ("ENVIRONMENT", "SECRET_KEY", "JWT_SECRET_KEY"):
+        monkeypatch.delenv(var, raising=False)
+
+
+def test_jwt_secret_key_falls_back_to_secret_key_when_unset(monkeypatch) -> None:
+    _clear_secret_env(monkeypatch)
+    monkeypatch.setenv("SECRET_KEY", "whatever-dev-value")
+    settings = Settings.from_env()
+    assert settings.jwt_secret_key == "whatever-dev-value"
+
+
+def test_jwt_secret_key_read_independently_when_set(monkeypatch) -> None:
+    _clear_secret_env(monkeypatch)
+    monkeypatch.setenv("SECRET_KEY", "a" * 40)
+    monkeypatch.setenv("JWT_SECRET_KEY", "b" * 40)
+    settings = Settings.from_env()
+    assert settings.secret_key == "a" * 40
+    assert settings.jwt_secret_key == "b" * 40
+
+
+def test_validate_is_a_noop_outside_production(monkeypatch) -> None:
+    _clear_secret_env(monkeypatch)  # dev default SECRET_KEY, no ENVIRONMENT set
+    Settings.from_env().validate()  # must not raise
+
+
+def test_validate_rejects_dev_default_secret_in_production(monkeypatch) -> None:
+    _clear_secret_env(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    with pytest.raises(RuntimeError, match="SECRET_KEY is still the dev default"):
+        Settings.from_env().validate()
+
+
+def test_validate_rejects_short_secret_in_production(monkeypatch) -> None:
+    _clear_secret_env(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("SECRET_KEY", "short")
+    monkeypatch.setenv("JWT_SECRET_KEY", "b" * 40)
+    with pytest.raises(RuntimeError, match="at least 32 characters"):
+        Settings.from_env().validate()
+
+
+def test_validate_rejects_shared_secret_and_jwt_key_in_production(monkeypatch) -> None:
+    _clear_secret_env(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("SECRET_KEY", "a" * 40)
+    # JWT_SECRET_KEY left unset -> falls back to SECRET_KEY -> identical.
+    with pytest.raises(RuntimeError, match="must be.*different|different values"):
+        Settings.from_env().validate()
+
+
+def test_validate_passes_with_distinct_high_entropy_keys_in_production(monkeypatch) -> None:
+    _clear_secret_env(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("SECRET_KEY", "a" * 40)
+    monkeypatch.setenv("JWT_SECRET_KEY", "b" * 40)
+    Settings.from_env().validate()  # must not raise
+
+
+def test_create_app_raises_on_insecure_production_config(db_session, monkeypatch) -> None:
+    _clear_secret_env(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    from app.web import create_app
+
+    with pytest.raises(RuntimeError, match="dev default"):
+        create_app(start_background_jobs=False)

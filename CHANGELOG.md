@@ -5,6 +5,19 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased] — Phase 5: DevEx & repo polish (in progress)
 
+### Added
+- Committed Playwright E2E suite (`tests/e2e/`, own README): login/logout +
+  RBAC gating across all three seeded demo roles, one full findings-workflow
+  cycle (transition/comment/assign/suppress), the run-to-run diff view, and
+  blast-radius graph rendering (verified via the real Cytoscape instance, not
+  just markup presence) — the handful of flows most likely to actually catch
+  a browser-level regression, not a recreation of every ad hoc verification
+  script run by hand across every phase. Wired as its own `e2e` CI job,
+  independent of `quality`: seeds a scratch DB (two moto scans, so the diff/
+  graph views have real drift/escalation data to render), backgrounds the
+  real Flask app, polls `/healthz`, then runs the suite against it over HTTP
+  only — no route-internal shortcuts.
+
 ### Fixed
 - CI workflow's push trigger targeted a `main` branch that doesn't exist in
   this repo (only `master` does) — CI had never actually run on a push here.
@@ -41,6 +54,58 @@ All notable changes to this project are documented here. Format follows
   poisonable by a spoofed Host on an unauthenticated-adjacent path. A new
   optional `PUBLIC_BASE_URL` setting pins the external base URL when set;
   unset (dev/demo default) keeps deriving from the request, unchanged.
+- The webhook integration adapter POSTed to any admin-configured URL with no
+  destination validation — an SSRF risk against loopback/internal/cloud-
+  metadata addresses, worse in a public deployment where the admin login is
+  shared. `app/integrations/net_safety.py` now validates scheme/credentials,
+  resolves the host once, rejects unsafe resolved addresses (loopback,
+  private, link-local, reserved, multicast, and their IPv4-mapped IPv6
+  forms), and pins the outbound connection to that validated IP so a second,
+  different DNS answer can't be substituted at connect time.
+- `SECRET_KEY` signed both the Flask session cookie and API JWTs, and the
+  dev default was accepted at any startup, including a hypothetical
+  production one. New `JWT_SECRET_KEY` setting (falls back to `SECRET_KEY`
+  when unset, unchanged default behavior) plus `Settings.validate()`, which
+  fails closed when `ENVIRONMENT=production` and either key is still the dev
+  default, too short, or the two are identical.
+- Public-demo hardening: a new `PUBLIC_MODE` setting clamps every capability
+  above `read_only` to always-denied inside `rbac.at_least()` — the single
+  choke point every enforcement path (route decorators, the API's
+  `require_api_role`, and the service-layer `accept-risk`/`connect-account`
+  re-checks) already calls, so turning this on protects all of them at once
+  rather than needing a matching change at each call site.
+- `user_service.update_role()`/`set_active()`'s last-active-admin lockout
+  read the active-admin count and acted on it as two separate steps, with no
+  lock — two concurrent requests could each read "another admin is still
+  active" before either committed and both proceed, leaving zero active
+  admins. Added `_lock_active_admins()`: `BEGIN IMMEDIATE` on SQLite,
+  `SELECT ... FOR UPDATE` on Postgres, run before the count is read.
+- `enqueue_scan()` didn't handle the job queue itself rejecting a submission
+  (pool exhausted/shut down) — the Run stayed stuck `queued` forever, since
+  nothing would ever call `execute_scan` to move it out of that state. The
+  submission is now wrapped in `try`/`except`: on failure the Run is marked
+  `failed` with the error recorded, mirroring `execute_scan`'s own
+  record-then-raise shape.
+- `ticket_service.create_ticket()` had no guard against being called twice
+  for the same finding group — a retry (double-click, a client timeout on a
+  request that actually succeeded server-side) would call the adapter again,
+  creating a genuine second ticket in the external system, and silently
+  overwrite `group.ticket_ref` with the new one, orphaning the first. Now
+  rejects with `TicketError` when `group.ticket_ref` is already set.
+- Suppress/accept-risk on the finding drawer silently stopped working
+  whenever it followed any prior transition or assignment in the same
+  drawer session — found by the new E2E suite's workflow-cycle test, not
+  previously caught since no prior Playwright pass had chained those
+  actions together. Root cause: htmx 2.0.4 corrupts a `<form>`'s element
+  association (`.form`/`closest('form')` on its descendants silently
+  becomes null, so its submit button stops firing) when an `hx-swap-oob`
+  element precedes that `<form>` in the same response — confirmed via a
+  minimal reproduction using only the vendored `htmx.min.js`, no Alpine, no
+  rest of the app. `finding_drawer.html`'s suppress/accept-risk forms sit in
+  the footer, and most mutations (transition, assign) render their OOB
+  row-sync block *before* that footer. Fixed by moving the OOB blocks to
+  the end of the template — a plain reordering, no behavior change to what
+  gets swapped where.
 
 ### Changed
 - Moved Flask-Login, Flask-WTF, argon2-cffi, email-validator, APScheduler,

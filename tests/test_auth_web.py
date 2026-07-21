@@ -14,7 +14,9 @@ pytestmark = pytest.mark.integration
 
 
 def _login(client, email: str, password: str):  # noqa: ANN001
-    return client.post("/login", data={"email": email, "password": password}, follow_redirects=False)
+    return client.post(
+        "/login", data={"email": email, "password": password}, follow_redirects=False
+    )
 
 
 # --- unauthenticated access ---------------------------------------------------
@@ -23,7 +25,9 @@ def _login(client, email: str, password: str):  # noqa: ANN001
 def test_unauthenticated_root_redirects_to_login(client) -> None:
     resp = client.get("/", follow_redirects=False)
     assert resp.status_code == 302
-    assert resp.headers["Location"].endswith("/login?next=%2F") or "/login" in resp.headers["Location"]
+    assert (
+        resp.headers["Location"].endswith("/login?next=%2F") or "/login" in resp.headers["Location"]
+    )
 
 
 def test_unauthenticated_htmx_request_gets_hx_redirect_not_a_302(client) -> None:
@@ -71,7 +75,11 @@ def test_login_unknown_email_shows_the_same_generic_error(client) -> None:
 
 @pytest.mark.parametrize(
     ("email", "role"),
-    [("admin@example.com", "admin"), ("analyst@example.com", "analyst"), ("viewer@example.com", "read_only")],
+    [
+        ("admin@example.com", "admin"),
+        ("analyst@example.com", "analyst"),
+        ("viewer@example.com", "read_only"),
+    ],
 )
 def test_all_three_seeded_demo_users_can_log_in(client, email, role) -> None:
     resp = _login(client, email, DEMO_PASSWORD)

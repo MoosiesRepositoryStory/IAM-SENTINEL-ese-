@@ -66,7 +66,9 @@ def test_intern_graph_shows_the_escalation_path_to_bob(db_session) -> None:
     assert f"principal:{intern_uid}" in node_ids
     assert f"principal:{bob_uid}" in node_ids
 
-    focus_node = next(n["data"] for n in graph["nodes"] if n["data"]["id"] == f"principal:{intern_uid}")
+    focus_node = next(
+        n["data"] for n in graph["nodes"] if n["data"]["id"] == f"principal:{intern_uid}"
+    )
     assert focus_node["is_focus"] is True
     assert focus_node["blast_radius_score"] > 0
 

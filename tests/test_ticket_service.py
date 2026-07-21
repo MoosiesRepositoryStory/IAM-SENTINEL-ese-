@@ -23,7 +23,9 @@ _SAMPLES = Path(__file__).resolve().parent.parent / "samples"
 
 def _seed(session) -> tuple[FindingGroup, Finding]:
     account = create_account(
-        session, name="Acme Corp", source_type="file",
+        session,
+        name="Acme Corp",
+        source_type="file",
         source_config={
             "inventory_path": str(_SAMPLES / "users.csv"),
             "policies_path": str(_SAMPLES / "policies.json"),
@@ -47,8 +49,14 @@ def test_create_ticket_via_jira_stub_persists_ref(db_session) -> None:
     db_session.flush()
 
     used = create_ticket(
-        db_session, group, finding, target_id=target.id, title="MFA gap",
-        body="details", finding_url="https://sentinel.example/findings/1", actor_id=actor.id,
+        db_session,
+        group,
+        finding,
+        target_id=target.id,
+        title="MFA gap",
+        body="details",
+        finding_url="https://sentinel.example/findings/1",
+        actor_id=actor.id,
     )
     assert used.id == target.id
     db_session.refresh(group)
@@ -56,7 +64,9 @@ def test_create_ticket_via_jira_stub_persists_ref(db_session) -> None:
     assert "(simulated)" in group.ticket_ref
     assert group.ticket_url is None
 
-    event = db_session.scalars(select(AuditEvent).where(AuditEvent.action == "ticket_created")).one()
+    event = db_session.scalars(
+        select(AuditEvent).where(AuditEvent.action == "ticket_created")
+    ).one()
     assert event.event_metadata["kind"] == "jira"
     assert event.event_metadata["simulated"] is True
     assert event.actor_id == actor.id
@@ -67,7 +77,12 @@ def test_create_ticket_requires_title(db_session) -> None:
     target = create_target(db_session, kind="jira", name="Jira", config={})
     with pytest.raises(TicketError, match="title is required"):
         create_ticket(
-            db_session, group, finding, target_id=target.id, title="   ", body="",
+            db_session,
+            group,
+            finding,
+            target_id=target.id,
+            title="   ",
+            body="",
             finding_url="https://x",
         )
     db_session.refresh(group)
@@ -78,7 +93,12 @@ def test_create_ticket_unknown_target_raises(db_session) -> None:
     group, finding = _seed(db_session)
     with pytest.raises(TicketError, match="not found"):
         create_ticket(
-            db_session, group, finding, target_id=999999, title="x", body="",
+            db_session,
+            group,
+            finding,
+            target_id=999999,
+            title="x",
+            body="",
             finding_url="https://x",
         )
 
@@ -91,19 +111,70 @@ def test_create_ticket_disabled_target_rejected(db_session) -> None:
 
     with pytest.raises(TicketError, match="disabled"):
         create_ticket(
-            db_session, group, finding, target_id=target.id, title="x", body="",
+            db_session,
+            group,
+            finding,
+            target_id=target.id,
+            title="x",
+            body="",
             finding_url="https://x",
         )
 
 
-def test_create_ticket_via_webhook_target(db_session, local_http_server) -> None:
+def test_create_ticket_rejects_when_ticket_ref_already_set(db_session) -> None:
+    """A retry (double-click, client timeout on a request that actually
+    succeeded server-side) must not call the adapter a second time — that
+    would create a genuine second ticket in the external system rather than
+    just re-showing the first one."""
+    group, finding = _seed(db_session)
+    target = create_target(db_session, kind="jira", name="Jira", config={"project_key": "SEC"})
+    create_ticket(
+        db_session,
+        group,
+        finding,
+        target_id=target.id,
+        title="MFA gap",
+        body="details",
+        finding_url="https://x",
+    )
+    db_session.refresh(group)
+    first_ref = group.ticket_ref
+    assert first_ref is not None
+
+    with pytest.raises(TicketError, match="already exists"):
+        create_ticket(
+            db_session,
+            group,
+            finding,
+            target_id=target.id,
+            title="MFA gap (retry)",
+            body="details",
+            finding_url="https://x",
+        )
+
+    db_session.refresh(group)
+    assert group.ticket_ref == first_ref  # unchanged — no second ticket, no overwrite
+    events = db_session.scalars(
+        select(AuditEvent).where(AuditEvent.action == "ticket_created")
+    ).all()
+    assert len(events) == 1
+
+
+def test_create_ticket_via_webhook_target(
+    db_session, local_http_server, allow_loopback_webhook_targets
+) -> None:
     group, finding = _seed(db_session)
     url = f"http://127.0.0.1:{local_http_server.server_port}/hook"
     target = create_target(db_session, kind="webhook", name="Hook", config={"url": url})
 
     create_ticket(
-        db_session, group, finding, target_id=target.id, title="MFA gap",
-        body="details", finding_url="https://sentinel.example/findings/1",
+        db_session,
+        group,
+        finding,
+        target_id=target.id,
+        title="MFA gap",
+        body="details",
+        finding_url="https://sentinel.example/findings/1",
     )
     db_session.refresh(group)
     assert group.ticket_ref.startswith("webhook-")

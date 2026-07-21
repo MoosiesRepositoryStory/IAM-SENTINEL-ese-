@@ -45,7 +45,9 @@ def login() -> Response | str:
         with session_scope() as session:
             try:
                 user = authenticate(session, form.email.data or "", form.password.data or "")
-                session.add(AuditEvent(actor_id=user.id, action="login", target=f"app_user:{user.id}"))
+                session.add(
+                    AuditEvent(actor_id=user.id, action="login", target=f"app_user:{user.id}")
+                )
                 session.flush()
                 session.expunge(user)
             except AuthError as exc:
@@ -79,7 +81,9 @@ def logout() -> Response:
     # in depth.
     with session_scope() as session:
         session.add(
-            AuditEvent(actor_id=current_user.id, action="logout", target=f"app_user:{current_user.id}")
+            AuditEvent(
+                actor_id=current_user.id, action="logout", target=f"app_user:{current_user.id}"
+            )
         )
     logout_user()
     if request.headers.get("HX-Request") == "true":

@@ -201,9 +201,7 @@ def test_scan_moto_account_end_to_end(db_session) -> None:
     findings = db_session.scalars(select(Finding).where(Finding.run_id == run.id)).all()
     assert len(findings) > 20
 
-    escalations = [
-        f for f in findings if f.check_id == "iam.escalation.passrole_createkey"
-    ]
+    escalations = [f for f in findings if f.check_id == "iam.escalation.passrole_createkey"]
     intern = [f for f in escalations if f.principal_uid.endswith(":user/intern")]
     assert intern and intern[0].severity == "CRITICAL"
 
@@ -238,7 +236,8 @@ def test_scan_moto_account_populates_permission_graph(db_session) -> None:
     escalation = next(
         f
         for f in db_session.scalars(select(Finding).where(Finding.run_id == run.id)).all()
-        if f.check_id == "iam.escalation.passrole_createkey" and f.principal_uid.endswith(":user/intern")
+        if f.check_id == "iam.escalation.passrole_createkey"
+        and f.principal_uid.endswith(":user/intern")
     )
     assert escalation.evidence.get("graph_path", [""])[-1].endswith(":user/bob")
     assert escalation.evidence.get("graph_path_via") == "iam:CreateAccessKey"
