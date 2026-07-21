@@ -10,7 +10,11 @@
   --border-strong: #313A4B;
   --text: #E4E7EB;
   --text-muted: #8A94A6;
-  --text-faint: #5B6472;
+  /* WCAG contrast audit (see CHANGELOG): #5B6472 measured 2.99:1 / 2.71:1
+     against --bg-elev / --bg-elev-2 — below the 4.5:1 normal-text minimum
+     everywhere this is used as text. Lightened in place (same hue) to clear
+     the threshold against its worst-case surface (--bg-elev-2). */
+  --text-faint: #7F8998;
   --accent: #4C8DFF;
   --accent-soft: rgba(76, 141, 255, 0.14);
   --row-hover: #171D2A;
@@ -20,6 +24,20 @@
   --sev-high: #FF9F45;
   --sev-medium: #FFD24C;
   --sev-low: #6AD19A;
+
+  /* Ink for `.risk` badges (below) whose severity background is too bright
+     for white text — same "hue-tinted near-black" recipe as the pre-existing
+     r-med/r-low inks, extended to r-crit/r-high (white on --sev-high measured
+     2.04:1 here). Undefined in the light-theme block below: `.risk` overrides
+     read these via var(--risk-X-ink, #fff), so light theme's fallback to
+     plain white is intentional — its own (darker) severity colors already
+     clear 4.5:1 with white, verified by the audit, no override needed there. */
+  --risk-crit-ink: #260A0F;
+  --risk-high-ink: #26180A;
+  --risk-med-ink: #26210A;
+  --risk-low-ink: #06251A;
+  /* Same pattern for .btn.primary: white on --accent measured 3.20:1 here. */
+  --btn-primary-ink: #0A1426;
 
   --sidebar-w: 216px;
   --topbar-h: 56px;
@@ -36,16 +54,35 @@
   --border-strong: #CBD3DF;
   --text: #1A2030;
   --text-muted: #5B6472;
-  --text-faint: #8A94A6;
-  --accent: #2563EB;
+  /* See the dark :root block's comment — same fix, darkened here since this
+     is the light theme (worst case was --bg-elev-2 at 2.70:1). */
+  --text-faint: #626D81;
+  /* Darkened slightly (same hue): var(--accent) on its own accent-soft tint
+     (nav-item.active, chip.on, ticket-chip, bulk-bar, assignee avatar,
+     provider-card.on) measured 4.25:1 here, just under 4.5:1. */
+  --accent: #2361EB;
   --accent-soft: rgba(37, 99, 235, 0.10);
   --row-hover: #F0F3F8;
   --shadow: 0 8px 30px rgba(20, 30, 50, 0.12);
 
-  --sev-critical: #D63552;
-  --sev-high: #C9721B;
-  --sev-medium: #B5890E;
-  --sev-low: #2E9E68;
+  /* All four darkened (same hue each) per the WCAG audit: as plain text
+     (status pills, drawer/wizard error banners, lp-confidence icons,
+     since-strip/diff-banner deltas, blast-pill, escalation-banner, compliance
+     percentages, gauge grade text, dashboard severity tiles) and especially
+     as color-mix(...,transparent) self-tinted pill/badge text, these
+     measured as low as 2.72:1-3.82:1 against the light theme's light
+     surfaces — well under the 4.5:1 minimum. Each new value clears 4.5:1
+     against its own worst measured case (the self-tinted pill/banner use).
+     White risk-badge/status text on the ORIGINAL (lighter) values already
+     passed and would still pass now — these are darker, not lighter. */
+  --sev-critical: #BA2640;
+  --sev-high: #9C5815;
+  --sev-medium: #81620A;
+  --sev-low: #21734B;
+  /* --risk-*-ink / --btn-primary-ink deliberately NOT redefined here: this
+     theme's own severity/accent colors above are dark enough that white
+     text already clears 4.5:1 against them (verified), so `.risk`/
+     `.btn.primary` fall back to their base `#fff` via var(--x, #fff). */
 }
 
 * { box-sizing: border-box; }
@@ -229,10 +266,10 @@ table.findings { width: 100%; border-collapse: collapse; font-size: 13px; }
   font-weight: 650; font-variant-numeric: tabular-nums; font-size: 12px;
   color: #fff;
 }
-.risk.r-crit { background: var(--sev-critical); }
-.risk.r-high { background: var(--sev-high); }
-.risk.r-med  { background: var(--sev-medium); color: #26210A; }
-.risk.r-low  { background: var(--sev-low); color: #06251A; }
+.risk.r-crit { background: var(--sev-critical); color: var(--risk-crit-ink, #fff); }
+.risk.r-high { background: var(--sev-high); color: var(--risk-high-ink, #fff); }
+.risk.r-med  { background: var(--sev-medium); color: var(--risk-med-ink, #fff); }
+.risk.r-low  { background: var(--sev-low); color: var(--risk-low-ink, #fff); }
 
 /* severity pill */
 .pill {
@@ -409,7 +446,7 @@ table.findings { width: 100%; border-collapse: collapse; font-size: 13px; }
   border-radius: 8px; padding: 8px 14px; font: inherit; font-size: 13px; font-weight: 550;
   cursor: pointer; border: 1px solid var(--border-strong);
 }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--btn-primary-ink, #fff); }
 .btn.primary:hover { filter: brightness(1.08); }
 .btn.ghost { background: transparent; color: var(--text-muted); }
 .btn.ghost:hover { color: var(--text); border-color: var(--text-faint); }
@@ -846,12 +883,27 @@ tr.run-highlight:hover { background: var(--accent-soft); }
 }
 .graph-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend-dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
-.legend-principal { background: #4C8DFF; border-radius: 50%; }
-.legend-policy { background: #8A94A6; }
+/* principal/policy/assume: were hardcoded to graph.js's own literals (which
+   in turn were hardcoded to the DARK theme's variables — see graph.js) and
+   measured 2.98:1 / 2.85:1 / 2.98:1 against --bg in light theme, just under
+   the 3:1 non-text/component minimum. Wired to the real variables instead —
+   dark theme is unaffected (identical value), light theme now correctly
+   uses its own accent/text-muted, clearing 3:1 with margin. */
+.legend-principal { background: var(--accent); border-radius: 50%; }
+.legend-policy { background: var(--text-muted); }
+/* action/resource/escalate: NOT wired to var(--sev-medium)/var(--sev-low)/
+   var(--sev-high) despite measuring below 3:1 in light theme (1.34:1 /
+   1.75:1 / 1.90:1) — those variables were darkened substantially above for
+   TEXT contrast reasons, and applying that big a lightness jump to a small
+   decorative legend swatch would be a much larger visual change than "adjust
+   lightness", plus each already has an adjacent text label (e.g. "Action")
+   carrying the actual information, so the swatch color is a supplementary
+   cue, not the sole channel. Flagged for manual review, not auto-fixed —
+   see the contrast audit report for the measured numbers. */
 .legend-action { background: #FFD24C; transform: rotate(45deg); }
 .legend-resource { background: #6AD19A; }
 .legend-line { width: 18px; height: 0; border-top: 2px solid; display: inline-block; }
-.legend-assume { border-color: #4C8DFF; }
+.legend-assume { border-color: var(--accent); }
 .legend-escalate { border-color: #FF9F45; border-top-style: dashed; }
 .legend-path { border-color: var(--sev-critical); border-top-style: dashed; border-top-width: 3px; }
 

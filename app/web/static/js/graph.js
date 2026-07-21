@@ -4,20 +4,38 @@
  * separate from app.js's Sentinel (findings-table/palette/shortcuts) —
  * this page has nothing to do with that surface. */
 window.SentinelGraph = (function () {
+  // Cytoscape draws to a <canvas>, which — unlike the rest of the app's DOM —
+  // never picks up CSS custom properties on its own, so these color values
+  // must be read explicitly and re-read on every theme change (see the
+  // MutationObserver in init(), below). A WCAG contrast audit found this
+  // page's text/lines had been hardcoded to the DARK theme's variable values
+  // (e.g. node-label color #E4E7EB is exactly dark's --text) — harmless in
+  // dark mode by coincidence, but 1.24:1 (near-invisible) in light mode,
+  // since light's --bg-elev is white. Reading the live variables fixes both
+  // themes and any future theme addition, instead of a second hardcoded copy.
+  function themeColor(name, fallback) {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+  }
+
   function styles() {
+    const text = themeColor("--text", "#E4E7EB");
+    const borderStrong = themeColor("--border-strong", "#313A4B");
+    const textFaint = themeColor("--text-faint", "#5B6472");
+    const sevHigh = themeColor("--sev-high", "#FF9F45");
     return [
       {
         selector: "node",
         style: {
           label: "data(label)",
           "font-size": 9,
-          color: "#E4E7EB",
+          color: text,
           "text-valign": "bottom",
           "text-margin-y": 6,
           "text-wrap": "ellipsis",
           "text-max-width": "90px",
           "border-width": 2,
-          "border-color": "#313A4B",
+          "border-color": borderStrong,
         },
       },
       {
@@ -31,6 +49,16 @@ window.SentinelGraph = (function () {
       },
       { selector: 'node[kind="role"]', style: { "background-color": "#8A6CFF" } },
       {
+        // NOTE (contrast audit): policy/action/resource fills below, plus the
+        // matching CSS legend swatches, measure under the 3:1 non-text
+        // minimum against a WHITE (light-theme) canvas — e.g. the action
+        // diamond's yellow is ~1.4:1. Left as fixed categorical colors rather
+        // than wired to the (much darker, text-tuned) --sev-medium/--sev-low
+        // variables: each node's SHAPE already distinguishes its type
+        // independent of color (round-rect/diamond/hexagon), so color here
+        // is a supplementary cue, not the sole channel — and matching the
+        // darkened text variables would be a much bigger visual change than
+        // a lightness nudge. Flagged for manual review, not auto-fixed.
         selector: 'node[type="policy"]',
         style: { shape: "round-rectangle", "background-color": "#8A94A6", width: 22, height: 22 },
       },
@@ -48,12 +76,14 @@ window.SentinelGraph = (function () {
         // Structural "grants" edges (HAS_POLICY / GRANTS_ACTION / ON_RESOURCE)
         // stay neutral gray — the colored edges below are reserved for the
         // principal-to-principal "risk" relations so they read as a distinct
-        // category at a glance, not just another line in the chain.
+        // category at a glance, not just another line in the chain. Wired to
+        // --text-faint (contrast audit: this literal WAS exactly dark's old
+        // --text-faint value already, just not read live).
         selector: "edge",
         style: {
           width: 1.5,
-          "line-color": "#5B6472",
-          "target-arrow-color": "#5B6472",
+          "line-color": textFaint,
+          "target-arrow-color": textFaint,
           "target-arrow-shape": "triangle",
           "curve-style": "bezier",
           "arrow-scale": 0.8,
@@ -68,12 +98,18 @@ window.SentinelGraph = (function () {
         // Dimmed by default — a principal can often CAN_ESCALATE to many
         // others (e.g. "mint anyone's credentials"), and drawing all of them
         // at full strength would drown out the one path this page highlights.
+        // Wired to --sev-high (contrast audit: was a hardcoded copy of dark's
+        // value); opacity raised 0.45->0.7 — even wired, 0.45 measured
+        // 2.72:1/1.38:1 (dark/light) against bg-elev, since the low opacity
+        // itself was most of the shortfall. 0.7 is the minimum that clears
+        // 3:1 in the harder (light) case with a small margin, still visibly
+        // dimmer than the full-strength on-path edge below.
         selector: 'edge[relation="CAN_ESCALATE"]',
         style: {
-          "line-color": "#FF9F45",
-          "target-arrow-color": "#FF9F45",
+          "line-color": sevHigh,
+          "target-arrow-color": sevHigh,
           "line-style": "dashed",
-          opacity: 0.45,
+          opacity: 0.7,
         },
       },
       {
@@ -151,6 +187,15 @@ window.SentinelGraph = (function () {
         showEmpty();
       }
     });
+
+    // The theme toggle (base.html) flips <html data-theme> live, with no page
+    // reload — but the canvas colors above were read once, at init, so
+    // without this they'd go stale (right theme on load, wrong theme after a
+    // toggle). Re-applying styles() on every data-theme change keeps the
+    // canvas in sync the same way the rest of the (CSS-variable-driven) page
+    // already is for free.
+    const themeObserver = new MutationObserver(() => cy.style(styles()));
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
     // Playwright verification hook — not used by app logic.
     window.__sentinelCy = cy;
