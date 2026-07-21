@@ -25,6 +25,67 @@
 
 ---
 
+## Repository layout
+
+```
+app/                        # the product — a Flask app + analysis engine
+├── analysis/                 # rule engine: 20 compliance-mapped checks + scoring
+│   ├── checks/                 # one module per check category (credential, identity,
+│   │                           #   inventory, log, policy, privilege-escalation)
+│   ├── engine.py                # runs the check registry over a NormalizedDataset
+│   ├── graph.py                  # permission graph + blast-radius scoring (§6.2)
+│   ├── least_privilege.py        # unused-grant / suggested-policy recommendations
+│   ├── registry.py                # @register decorator + the check REGISTRY
+│   └── risk.py                     # composite risk scoring + account posture
+├── api/                       # /api/v1 JSON API (flask-smorest), separate JWT auth
+├── compliance/                # CIS/SOC2/NIST control mappings
+├── domain/                    # pure, dependency-light logic (fingerprinting, cron,
+│                               #   log parsing, policy evaluation, records/enums)
+├── ingestion/                  # adapters that turn a source into a RawDataset
+│   └── moto/                     # simulated-AWS org: deterministic seed + boto3/moto
+│                                 #   adapter (the "Connect → Demo" marquee path)
+├── integrations/               # ticket/webhook notification adapters (Slack/Jira are
+│                               #   simulated; only the webhook adapter makes a real,
+│                               #   SSRF-guarded outbound call)
+├── models/                     # SQLAlchemy table definitions
+├── services/                   # application/orchestration layer — one module per
+│                               #   feature area (scans, findings, accounts, RBAC,
+│                               #   scheduling, diff, exceptions, dashboard, ...)
+├── web/                        # the HTML app: routes, auth, templates, static assets
+│   ├── static/                    # vendored htmx/Alpine/Cytoscape (no CDN), app CSS/JS
+│   └── templates/                 # Jinja templates + htmx partials/
+├── cli.py                      # `iam-sentinel` command (init-db, scan, checks, export)
+├── config.py                    # Settings.from_env() + production fail-closed checks
+├── db.py                         # engine/session factory
+├── jobs.py                        # in-process ThreadingJobQueue (background scans)
+└── scheduler.py                    # in-process APScheduler (recurring scans + expiry)
+
+tests/                      # pytest suite (one file per service/module under test)
+└── e2e/                       # committed Playwright suite — needs a live server/
+                              #   browser, excluded from plain `pytest`; own README
+
+migrations/                 # Alembic migrations
+└── versions/                  # one file per schema revision
+
+docs/                       # ARCHITECTURE_SPEC.md — the original design spec this
+                            #   app was built against
+
+samples/                    # example inventory/policies/log files for the file-upload
+                            #   ingestion path (CLI + Connect wizard "Upload")
+
+Dockerfile                  # multi-stage build → the image the live deploy runs
+docker-compose.yml           # local "serious demo" stack (app + real Postgres)
+docker-entrypoint.sh          # runs `alembic upgrade head`, then execs the CMD
+pyproject.toml                # package + all dependency extras (dev/cloud/graph/
+                              #   docker/e2e/jobs — see the file's own comments)
+alembic.ini                    # Alembic config (URL is resolved at runtime, not here)
+CONTRIBUTING.md                 # dev setup, test tiers, PR expectations
+SECURITY.md                      # vulnerability reporting + documented security posture
+CHANGELOG.md                      # what shipped in each phase/slice
+```
+
+---
+
 ## What it demonstrates
 
 IAM Sentinel is a portfolio piece that shows depth across security domain
