@@ -12,6 +12,8 @@ not alphabetical, so we sort it via a CASE expression rather than by the string.
 
 from __future__ import annotations
 
+import difflib
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -262,6 +264,86 @@ def query_findings(
         filters=filters,
         facets=facets,
     )
+
+
+# ---------------------------------------------------------------------------
+# Fuzzy fallback (§8.5 command palette) — only reached when the exact/
+# substring search above (FindingFilters.search's SQL LIKE) returns zero
+# results, so a typo doesn't just dead-end at "no findings match".
+
+# Defensive cap on how many rows the Python-side matching pass considers —
+# this app's real scale (a demo/portfolio moto org, or a file-uploaded org)
+# is nowhere near this today, but the cap keeps a pathologically large
+# account from ever making one keystroke slow. Empirically timed against a
+# realistic multi-word query at exactly this many synthetic candidate rows:
+# ~55-65ms worst case (SequenceMatcher.quick_ratio() pre-filtering the
+# expensive ratio() call, per the stdlib's own documented pattern for
+# comparing one sequence against many) — comfortably inside the 200ms
+# debounce this already runs behind, even before counting network/DB time.
+_FUZZY_CANDIDATE_CAP = 500
+_FUZZY_CUTOFF = 0.6
+_TOKEN_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _tokenize(text: str) -> list[str]:
+    return [t for t in _TOKEN_RE.split(text.lower()) if t]
+
+
+def fuzzy_search_findings(session: Session, account_id: int, query: str, *, limit: int = 8) -> list[Finding]:
+    """Typo-tolerant fallback over the SAME candidate corpus the exact search
+    uses (``Finding.title`` + ``Finding.principal_uid``, scoped to the
+    account's latest completed run) — Python-side ``difflib`` matching, not a
+    DB-specific fuzzy extension (e.g. Postgres's ``pg_trgm``), so it behaves
+    identically on SQLite (dev/CI) and Postgres (the live deploy).
+
+    Per-candidate score is the average, over each query token, of that
+    token's best ``SequenceMatcher.ratio()`` against any one of the
+    candidate's own tokens — scored at the token level (not the whole
+    title/principal string at once) so a short, misspelled query fragment
+    isn't penalized for the surrounding words in a long title the way a
+    whole-string ratio would be. Results are capped at ``limit`` (matching
+    the exact path's page size) and sorted best-match-first.
+    """
+    run = latest_run(session, account_id)
+    if run is None:
+        return []
+    query_tokens = _tokenize(query)
+    if not query_tokens:
+        return []
+
+    candidates = list(
+        session.scalars(select(Finding).where(Finding.run_id == run.id).limit(_FUZZY_CANDIDATE_CAP))
+    )
+
+    # One SequenceMatcher per query token, reused across every candidate token
+    # via set_seq2() — the stdlib's own recommended usage for comparing one
+    # sequence against many, and what makes quick_ratio()'s cheap upper-bound
+    # pre-filter (skip the expensive real comparison whenever it can't
+    # possibly beat the best score found so far) actually pay off.
+    matchers = [difflib.SequenceMatcher(None, qt) for qt in query_tokens]
+
+    scored: list[tuple[float, Finding]] = []
+    for finding in candidates:
+        candidate_tokens = _tokenize(f"{finding.title} {finding.principal_uid or ''}")
+        if not candidate_tokens:
+            continue
+        total = 0.0
+        for matcher in matchers:
+            best = 0.0
+            for tok in candidate_tokens:
+                matcher.set_seq2(tok)
+                if matcher.quick_ratio() <= best:
+                    continue
+                ratio = matcher.ratio()
+                if ratio > best:
+                    best = ratio
+            total += best
+        score = total / len(query_tokens)
+        if score >= _FUZZY_CUTOFF:
+            scored.append((score, finding))
+
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    return [finding for _, finding in scored[:limit]]
 
 
 def assignee_names(session: Session, group_ids: list[int]) -> dict[int, str]:

@@ -367,8 +367,15 @@ table.findings { width: 100%; border-collapse: collapse; font-size: 13px; }
   background: var(--bg-elev); border-radius: var(--radius);
   padding: 14px; pointer-events: none;
 }
-/* #drawer-skeleton reuses .drawer-backdrop/.drawer-panel's own (fixed,
-   full-viewport) layout directly rather than .skeleton-overlay above.
+/* #drawer-skeleton uses its own .drawer-skeleton-backdrop/.drawer-skeleton-
+   panel classes (fixed, full-viewport layout shared with the real
+   .drawer-backdrop/.drawer-panel via the comma-selector above, but a
+   distinct class name) rather than .skeleton-overlay above, or the real
+   drawer's own classes — this is a permanent, always-in-the-DOM element
+   (only its opacity toggles), so reusing .drawer-panel directly made that
+   selector match two elements at once any time the real drawer was also
+   open, which is exactly the kind of thing a class-based test locator
+   can't disambiguate (caught by the E2E suite, not by eye).
    pointer-events:none is load-bearing here, not cosmetic: opacity:0 alone
    still blocks clicks underneath (opacity doesn't exempt hit-testing), and
    this sits over the ENTIRE viewport — if the .htmx-indicator class were
@@ -390,20 +397,29 @@ table.findings { width: 100%; border-collapse: collapse; font-size: 13px; }
 #palette-results > * { transition: opacity 180ms cubic-bezier(.2, .7, .3, 1); }
 
 /* ---- Detail drawer (§8.8) ---- */
-.drawer-backdrop {
+/* Layout/position shared with #drawer-skeleton's own .drawer-skeleton-*
+   classes below (so the loading placeholder is pixel-identical to the real
+   thing) — but kept as DISTINCT class names, not reused directly on the
+   skeleton. A real, class-selector-based bug this fixed: the skeleton is a
+   permanent, always-in-the-DOM element (only its opacity toggles), so
+   .drawer-backdrop/.drawer-panel used to match TWO elements at once any
+   time the real drawer was also open — ambiguous for anything querying by
+   class, Playwright's strict-mode locators included (caught by this
+   session's E2E run, not by eye). */
+.drawer-backdrop, .drawer-skeleton-backdrop {
   position: fixed; inset: 0; z-index: 40;
   background: rgba(4, 7, 12, 0.55);
-  animation: fade .15s ease;
 }
+.drawer-backdrop { animation: fade .15s ease; }
 @keyframes fade { from { opacity: 0; } }
-.drawer-panel {
+.drawer-panel, .drawer-skeleton-panel {
   position: fixed; top: 0; right: 0; bottom: 0; z-index: 41;
   width: min(60%, 720px); min-width: 420px;
   background: var(--bg-elev); border-left: 1px solid var(--border-strong);
   box-shadow: var(--shadow);
   display: flex; flex-direction: column;
-  animation: slide-in .18s cubic-bezier(.2,.7,.3,1);
 }
+.drawer-panel { animation: slide-in .18s cubic-bezier(.2,.7,.3,1); }
 @keyframes slide-in { from { transform: translateX(24px); opacity: .4; } }
 
 .drawer-head { padding: 16px 20px 12px; border-bottom: 1px solid var(--border); }

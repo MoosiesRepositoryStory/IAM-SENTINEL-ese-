@@ -10,6 +10,7 @@ from app.services import create_account, run_scan
 from app.services.finding_query import (
     FindingFilters,
     SortKey,
+    fuzzy_search_findings,
     parse_filters,
     parse_sort,
     query_findings,
@@ -148,3 +149,42 @@ def test_no_run_returns_empty_page(db_session) -> None:
     assert page.total == 0
     assert page.rows == []
     assert page.facets == {}
+
+
+# ---- fuzzy fallback (§8.5 command palette) ----
+
+
+def test_fuzzy_search_finds_a_typo_of_a_real_principal(db_session) -> None:
+    account_id = _scanned_account(db_session)
+    # Confirm the exact path really does dead-end on this typo first — the
+    # fuzzy path is a *fallback*, this proves it's actually needed here.
+    exact = query_findings(db_session, account_id, filters=FindingFilters(search="intren"))
+    assert exact.total == 0
+
+    results = fuzzy_search_findings(db_session, account_id, "intren")
+    assert results, "a one-letter transposition of 'intern' should fuzzy-match"
+    assert any("intern" in (r.principal_uid or "").lower() for r in results)
+
+
+def test_fuzzy_search_returns_nothing_for_true_gibberish(db_session) -> None:
+    account_id = _scanned_account(db_session)
+    assert fuzzy_search_findings(db_session, account_id, "zzqxqzz-nonsense") == []
+
+
+def test_fuzzy_search_respects_the_limit(db_session) -> None:
+    account_id = _scanned_account(db_session)
+    # A single common short token ("a") will fuzzy-match broadly against a
+    # real scan's worth of titles/principals — this is exactly what `limit`
+    # exists to bound.
+    results = fuzzy_search_findings(db_session, account_id, "a", limit=3)
+    assert len(results) <= 3
+
+
+def test_fuzzy_search_no_run_returns_empty(db_session) -> None:
+    account = create_account(db_session, name="Empty", source_type="file", source_config={})
+    assert fuzzy_search_findings(db_session, account.id, "intren") == []
+
+
+def test_fuzzy_search_blank_query_returns_empty(db_session) -> None:
+    account_id = _scanned_account(db_session)
+    assert fuzzy_search_findings(db_session, account_id, "   ") == []

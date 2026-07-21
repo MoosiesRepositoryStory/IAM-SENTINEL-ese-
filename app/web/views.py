@@ -42,6 +42,7 @@ from app.services.finding_detail import get_finding_detail
 from app.services.finding_query import (
     FindingFilters,
     assignee_names,
+    fuzzy_search_findings,
     parse_filters,
     parse_sort,
     query_findings,
@@ -869,7 +870,10 @@ def _bulk_apply_exception(kind: str) -> Response | str:
 @bp.get("/command-palette/search")
 def palette_search() -> Response | str:
     """Findings results for the Cmd+K palette's search section (§8.5) — reuses
-    ``query_findings`` exactly as the table does, just capped short."""
+    ``query_findings`` exactly as the table does, just capped short. Falls
+    back to typo-tolerant fuzzy matching (``fuzzy_search_findings``) only
+    when the exact/substring search comes back empty, so a misspelled query
+    surfaces something instead of a dead end."""
     q = (request.args.get("q") or "").strip()
     if len(q) < 2:
         return ""
@@ -878,9 +882,14 @@ def palette_search() -> Response | str:
         if account is None:
             return ""
         page = query_findings(session, account.id, filters=FindingFilters(search=q), page_size=8)
-        for row in page.rows:
+        rows = page.rows
+        fuzzy = False
+        if not rows:
+            rows = fuzzy_search_findings(session, account.id, q, limit=8)
+            fuzzy = bool(rows)
+        for row in rows:
             session.expunge(row)
-        return render_template("partials/palette_results.html", rows=page.rows)
+        return render_template("partials/palette_results.html", rows=rows, fuzzy=fuzzy, query=q)
 
 
 @dataclass(frozen=True)

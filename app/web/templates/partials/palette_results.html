@@ -1,8 +1,12 @@
 {# Command palette search results (§8.5). Reuses the exact drawer deep-link
    route findings_table.html rows already use — selecting a result opens the
-   finding drawer and closes the palette. #}
+   finding drawer and closes the palette. ``fuzzy`` is only true when the
+   exact/substring search came back empty and these are the typo-tolerant
+   fallback's results instead (views.palette_search). #}
 {% if rows %}
-<div class="palette-group-label">Findings</div>
+<div class="palette-group-label">
+  {% if fuzzy %}Showing similar matches for "{{ query }}"{% else %}Findings{% endif %}
+</div>
 {% for f in rows %}
 <div class="palette-item" role="option" tabindex="-1"
      hx-get="{{ url_for('web.finding_drawer', group_id=f.group_id) }}"
