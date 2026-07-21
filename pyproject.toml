@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "iam-sentinel"
-version = "0.5.0"
+version = "1.0.0"
 description = "Cloud IAM security posture & entitlement analysis platform (CIEM/CSPM-lite)"
 readme = "README.md"
 requires-python = ">=3.11"

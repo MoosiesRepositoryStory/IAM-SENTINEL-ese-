@@ -3,7 +3,14 @@
 All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versions track the build phases.
 
-## [Unreleased] — Phase 5: DevEx & repo polish (in progress)
+## [Unreleased]
+
+## [1.0.0] — 2026-07-21 — Phase 5: DevEx, live deploy & UI polish
+
+Closes out Phases 0-5 in full. The app is live at
+[iam-sentinel.onrender.com](https://iam-sentinel.onrender.com) (Render, Docker
+image, Neon Postgres) — sign in with the seeded demo accounts on the login
+page.
 
 ### Added
 - Container image + local stack: multi-stage `Dockerfile` (deps built into a
@@ -28,8 +35,97 @@ All notable changes to this project are documented here. Format follows
   graph views have real drift/escalation data to render), backgrounds the
   real Flask app, polls `/healthz`, then runs the suite against it over HTTP
   only — no route-internal shortcuts.
+- **Live deployment**: Neon Postgres (direct, not pooled — correct at today's
+  single-instance/1-worker scale; a scaling comment next to `create_engine`
+  documents when to switch to the pooled endpoint) + a Render Docker web
+  service (1 instance, no autoscale — the in-process APScheduler assumes a
+  single process). `pool_pre_ping=True` on the engine so a request after
+  Neon's free-tier autosuspend reconnects transparently instead of 500ing —
+  empirically confirmed by watching the compute actually suspend and
+  recover, not just reasoned about.
+- **WCAG 2.1 contrast audit + fixes, both themes**: a throwaway script
+  measuring every rendered fg/bg pair (176 total) found light theme passing
+  only 103/176 and dark 146/176 — mostly `--text-faint` and the four
+  `--sev-*` severity colors falling short of 4.5:1 as text, especially in
+  their own `color-mix(...,transparent)` self-tinted badge/pill form.
+  Darkened those (same hue, lightness only) against each color's actual
+  worst measured case; added dark-theme-only `--risk-*-ink`/
+  `--btn-primary-ink` variables (falling back to plain white in light
+  theme) for the handful of badges too bright for white text. Also found
+  the blast-radius graph's Cytoscape canvas (JS, can't read CSS variables)
+  had every color hardcoded to literal copies of the *dark* theme's
+  values — invisible node-label text (1.24:1) in light mode. Wired to the
+  live theme variables via `getComputedStyle` + a `MutationObserver` on
+  `data-theme` so a live theme toggle keeps the canvas in sync. Re-audit
+  after: dark 175/176, light 170/176 — the 6 remaining are flagged, not
+  fixed (categorical node-fill colors and a subtle canvas border where
+  shape/adjacent text already carry the information, and fixing them would
+  need a bigger hue jump than "adjust lightness").
+- **Loading skeletons + swap/settle transitions**: shimmer-bar placeholders
+  shown for exactly the duration of the real htmx request (via the existing
+  `hx-indicator`/`.htmx-request` convention — no fixed fake delay) on the
+  findings table, the finding drawer, and command-palette search; a real
+  opacity/transform fade-in on swapped content via htmx's `.htmx-added`
+  lifecycle class; a `prefers-reduced-motion` override disabling every
+  animation/transition in the stylesheet in one place; a cheap
+  background-color/color/border-color transition on the theme toggle.
+  Deliberately not applied to the Runs page's self-polling row (would
+  flicker every 1.5s regardless of whether the content actually changed).
+- **Typo-tolerant command-palette search**: falls back to Python-side
+  `difflib` token-level fuzzy matching (stdlib, not a DB-specific extension
+  like Postgres `pg_trgm` — must behave identically on SQLite and Postgres)
+  only when the existing exact/substring search returns zero rows, showing
+  "Showing similar matches for '<query>'" instead of a dead end. Bounded at
+  500 candidate rows / 8 results; the naive nested-loop implementation
+  measured ~200-240ms for a 2-word query at that scale (too close to the
+  200ms debounce itself), so it reuses `SequenceMatcher`'s documented
+  one-vs-many pattern (`set_seq2` reuse + `quick_ratio()` pre-filter),
+  cutting that to ~55-65ms.
+- **Copy-to-clipboard** for hard-to-select values (principal ARNs, resource
+  identifiers, evidence blocks, policy JSON, webhook URLs): one reusable
+  Jinja macro + `Sentinel.copyValue()` JS helper across the finding drawer,
+  findings table, graph pages, and settings/integrations —
+  `navigator.clipboard.writeText()` (both the live deploy and localhost are
+  secure contexts, so no legacy fallback), an icon-to-checkmark swap for
+  1.5s with a graceful toast on the rejected-permission path, real
+  `<button>`s with `aria-label`s that reflect current state.
+- **Guided tour** + a consolidated top-right settings menu (dark-mode toggle
+  + "Start tutorial", replacing the standalone theme button): a vanilla-JS
+  spotlight/backdrop/tooltip tour over the sidebar, filter bar, findings
+  table, palette button, and the menu itself, launched only from that menu
+  item (never automatically — would otherwise intercept every E2E test's
+  clicks). Stoppable via Escape, "Skip tour", or a backdrop click, all of
+  which remove the tour's DOM nodes outright rather than just hiding them;
+  keyboard-shortcut-inert and focus-trapped while active; focus restored on
+  exit.
+- **Favicon set + installable PWA icons** generated from a new shield-logo
+  SVG (`static/img/logo.svg`): `favicon.ico` (16/32/48), a simplified
+  vector `favicon.svg` for the browser tab (the full logo turns to mush at
+  16px — confirmed via upscaled render comparison before shipping),
+  `apple-touch-icon.png`, and 192/512 PWA icons in both normal and
+  maskable-safe-zone variants, wired up via `site.webmanifest`
+  (`display: standalone`) and the corresponding `<head>` links.
 
 ### Fixed
+- The `docker` extra shipped only `gunicorn`/`psycopg` — no `boto3`/`moto`/
+  `networkx` — so the live deployed image silently fell back to file-only
+  ingestion with no blast-radius graph the moment "Connect → Demo → scan"
+  was tried for real; CI's own `docker` job never caught this because it
+  seeds moto data host-side rather than scanning inside the container.
+  Folded `cloud` + `graph` into `docker` (moto is a legitimate runtime
+  dependency here, not just a test one).
+- The guided-tour work's own loading-skeleton placeholder
+  (`#drawer-skeleton`) reused the real drawer's `.drawer-backdrop`/
+  `.drawer-panel` classes directly; since the skeleton is a permanent,
+  always-in-the-DOM element, that made those selectors match two elements
+  at once any time the real drawer was also open — invisible by eye, but
+  exactly the kind of ambiguity a class-based test locator can't
+  disambiguate (caught by the E2E suite's own strict-mode Playwright
+  assertion, not by eye). Split onto dedicated `.drawer-skeleton-*` classes.
+- `MAX_CONTENT_LENGTH` (8MB) on the Flask app — the Connect wizard's file
+  upload read the whole body into memory with no cap, a memory-exhaustion
+  risk on the small free-tier instance given the public demo runs with
+  `PUBLIC_MODE` off (full write access behind the shared demo login).
 - CI workflow's push trigger targeted a `main` branch that doesn't exist in
   this repo (only `master` does) — CI had never actually run on a push here.
 - CloudTrail activity classification: only the literal outcome `"denied"`
@@ -250,6 +346,7 @@ All notable changes to this project are documented here. Format follows
   Hypothesis property tests; 92% coverage. GitHub Actions CI + pre-commit.
 
 [Unreleased]: #
+[1.0.0]: #
 [0.5.0]: #
 [0.4.0]: #
 [0.3.0]: #
