@@ -3,6 +3,7 @@
 {% block title %}Blast Radius · IAM Sentinel{% endblock %}
 {% block crumb %}<b>Graph</b>{% endblock %}
 
+{% from "partials/_macros.html" import copy_button %}
 {% block main %}
 <div class="page-head">
   <h1>Blast Radius</h1>
@@ -30,7 +31,9 @@
     <tbody>
       {% for row in rows %}
       <tr onclick="window.location='{{ url_for('web.principal_detail', principal_uid=row.principal_uid) }}'">
-        <td class="mono">{{ row.username or row.principal_uid }}</td>
+        <td>
+          <span class="copyable"><span class="mono">{{ row.username or row.principal_uid }}</span>{{ copy_button(row.principal_uid, 'principal') }}</span>
+        </td>
         <td style="text-transform:capitalize">{{ row.kind }}</td>
         <td class="num">
           <span class="blast-pill blast-{{ 'high' if row.blast_radius_score >= 50 else ('mid' if row.blast_radius_score >= 20 else 'low') }}">

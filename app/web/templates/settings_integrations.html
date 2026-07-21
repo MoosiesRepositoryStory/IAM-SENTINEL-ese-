@@ -3,6 +3,7 @@
 {% block title %}Integrations · Settings · IAM Sentinel{% endblock %}
 {% block crumb %}<a href="{{ url_for('web.settings_index') }}">Settings</a> <span class="dot-sep">/</span> <b>Integrations</b>{% endblock %}
 
+{% from "partials/_macros.html" import copy_button %}
 {% block main %}
 <div x-data="{ show: {{ 'true' if form_open else 'false' }}, kind: 'webhook' }">
 <div class="page-head">
@@ -30,10 +31,12 @@
       <tr>
         <td class="title-cell">{{ t.name }}</td>
         <td><span class="integration-kind">{{ t.kind }}</span></td>
-        <td class="mono" style="font-size:11.5px">
-          {% if t.kind == 'webhook' %}{{ t.config.get('url', '—') }}
-          {% elif t.kind == 'jira' %}project: {{ t.config.get('project_key', '—') }}
-          {% elif t.kind == 'slack' %}{{ t.config.get('channel', '—') }}
+        <td style="font-size:11.5px">
+          {% if t.kind == 'webhook' and t.config.get('url') %}
+          <span class="copyable"><span class="mono">{{ t.config.get('url') }}</span>{{ copy_button(t.config.get('url'), 'webhook URL') }}</span>
+          {% elif t.kind == 'jira' %}<span class="mono">project: {{ t.config.get('project_key', '—') }}</span>
+          {% elif t.kind == 'slack' %}<span class="mono">{{ t.config.get('channel', '—') }}</span>
+          {% else %}<span class="mono">—</span>
           {% endif %}
         </td>
         <td><span class="chip {{ 'on' if t.enabled }}">{{ 'Enabled' if t.enabled else 'Disabled' }}</span></td>

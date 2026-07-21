@@ -15,6 +15,7 @@
    suppress silently stopped working the moment it followed ANY prior
    transition or assignment in the same drawer session. #}
 
+{% from "partials/_macros.html" import copy_button %}
 {% set f = d.finding %}
 {% set active_tab = focus_tab | default('overview', true) %}
 {% set sev_class = {'CRITICAL': 'r-crit', 'HIGH': 'r-high', 'MEDIUM': 'r-med', 'LOW': 'r-low'} %}
@@ -47,11 +48,15 @@
     </div>
     <h2 class="drawer-title">{{ f.title }}</h2>
     <div class="drawer-sub">
-      <span class="mono">{{ f.principal_uid or '—' }}</span>
+      {% if f.principal_uid %}
+      <span class="copyable"><span class="mono">{{ f.principal_uid }}</span>{{ copy_button(f.principal_uid, 'principal') }}</span>
+      {% else %}
+      <span class="mono">—</span>
+      {% endif %}
       <span class="dot-sep">·</span>
       <span style="text-transform:capitalize">{{ f.category }}</span>
       <span class="dot-sep">·</span>
-      <span class="mono">{{ f.check_id }}</span>
+      <span class="copyable"><span class="mono">{{ f.check_id }}</span>{{ copy_button(f.check_id, 'check ID') }}</span>
     </div>
   </header>
 
@@ -115,8 +120,18 @@
         <dt>Severity</dt><dd>{{ f.severity | capitalize }}</dd>
         <dt>Likelihood</dt><dd>{{ f.likelihood if f.likelihood is not none else '—' }}</dd>
         <dt>Impact</dt><dd>{{ f.impact if f.impact is not none else '—' }}</dd>
-        <dt>Principal</dt><dd class="mono">{{ f.principal_uid or '—' }}</dd>
-        <dt>Resource</dt><dd class="mono">{{ f.resource or '—' }}</dd>
+        <dt>Principal</dt>
+        <dd>
+          {% if f.principal_uid %}
+          <span class="copyable"><span class="mono">{{ f.principal_uid }}</span>{{ copy_button(f.principal_uid, 'principal') }}</span>
+          {% else %}—{% endif %}
+        </dd>
+        <dt>Resource</dt>
+        <dd>
+          {% if f.resource %}
+          <span class="copyable"><span class="mono">{{ f.resource }}</span>{{ copy_button(f.resource, 'resource') }}</span>
+          {% else %}—{% endif %}
+        </dd>
         <dt>First seen</dt><dd>{{ d.first_seen or '—' }}</dd>
         <dt>Last seen</dt><dd>{{ d.last_seen or '—' }}</dd>
         <dt>Age</dt><dd>{{ d.age_days ~ ' day' ~ ('' if d.age_days == 1 else 's') if d.age_days is not none else '—' }}</dd>
@@ -143,12 +158,20 @@
         <div class="ev-block">
           <div class="ev-key">{{ key | replace('_', ' ') }}</div>
           {% if val is string or val is number or val is boolean %}
-            <div class="ev-val mono">{{ val }}</div>
+            <div class="ev-val"><span class="copyable"><span class="mono">{{ val }}</span>{{ copy_button(val, key | replace('_', ' ')) }}</span></div>
           {% elif val is sequence %}
-            <pre class="code">{% for item in val %}{{ item if item is string else (item | tojson) }}
-{% endfor %}</pre>
+            {% set copy_text %}{% for item in val %}{{ item if item is string else (item | tojson) }}
+{% endfor %}{% endset %}
+            <div class="code-wrap">
+              {{ copy_button(copy_text, key | replace('_', ' ')) }}
+              <pre class="code">{{ copy_text }}</pre>
+            </div>
           {% else %}
-            <pre class="code">{{ val | tojson(indent=2) }}</pre>
+            {% set copy_text %}{{ val | tojson(indent=2) }}{% endset %}
+            <div class="code-wrap">
+              {{ copy_button(copy_text, key | replace('_', ' ')) }}
+              <pre class="code">{{ copy_text }}</pre>
+            </div>
           {% endif %}
         </div>
         {% endfor %}
@@ -183,7 +206,7 @@
       {% if f.remediation_snippet %}
       <div class="snippet">
         {% if confidence %}<div class="snippet-label">Suggested least-privilege policy</div>{% endif %}
-        <button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('pre').innerText); this.textContent='Copied'">Copy</button>
+        {{ copy_button(f.remediation_snippet, 'remediation snippet') }}
         <pre class="code">{{ f.remediation_snippet }}</pre>
       </div>
       {% elif not confidence %}

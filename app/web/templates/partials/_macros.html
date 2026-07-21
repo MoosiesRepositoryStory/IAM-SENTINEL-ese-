@@ -1,0 +1,17 @@
+{# Shared, reusable template snippets. Currently just the copy-to-clipboard
+   button (see Sentinel.copyValue() in app.js + the .copy-btn/.copyable/
+   .snippet CSS) — import wherever a value is long/awkward to select by hand
+   (ARNs, resource identifiers, principal names, policy JSON, evidence). #}
+
+{% macro copy_button(text, label, extra_class='') %}
+{# stopPropagation first: this button is often embedded inside a larger
+   clickable element (a table row that navigates on click, a future
+   context this doesn't know about) — a copy click should never ALSO
+   trigger whatever ancestor click handler exists. #}
+<button type="button" class="copy-btn {{ extra_class }}"
+        data-copy-text="{{ text }}" data-copy-label="Copy {{ label }}"
+        aria-label="Copy {{ label }}"
+        onclick="event.stopPropagation(); Sentinel.copyValue(this)">
+  <span class="copy-ico" aria-hidden="true">⎘</span>
+</button>
+{% endmacro %}

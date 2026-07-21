@@ -256,7 +256,41 @@ window.Sentinel = (function () {
 
   // ------------------------------------------------------------- copy (§8.3) --
   function copyText(text, label) {
-    navigator.clipboard.writeText(text).then(() => toast(label + ' copied'));
+    navigator.clipboard.writeText(text).then(
+      () => toast(label + ' copied'),
+      () => toast('Copy failed — clipboard access was denied')
+    );
+  }
+
+  // Reusable copy-to-clipboard affordance for hard-to-select values (ARNs,
+  // resource identifiers, principal names, policy JSON, evidence blocks) —
+  // the small-icon-button-with-a-checkmark pattern, distinct from the
+  // toast-based copyText() above (that one backs whole-finding "copy as
+  // Markdown/JSON…" context-menu actions, which have no persistent button
+  // of their own to animate). One handler for every instance of the button
+  // across every template: `<button class="copy-btn" data-copy-text="…"
+  // data-copy-label="Copy X" aria-label="Copy X" onclick="Sentinel.
+  // copyValue(this)"><span class="copy-ico">⎘</span></button>`.
+  const _copyResetTimers = new WeakMap();
+  function copyValue(btn) {
+    const text = btn.dataset.copyText || '';
+    const label = btn.dataset.copyLabel || 'Copy';
+    const icon = btn.querySelector('.copy-ico');
+    navigator.clipboard.writeText(text).then(
+      () => {
+        window.clearTimeout(_copyResetTimers.get(btn));
+        btn.classList.add('copied');
+        btn.setAttribute('aria-label', 'Copied');
+        if (icon) icon.textContent = '✓';
+        const timer = window.setTimeout(() => {
+          btn.classList.remove('copied');
+          btn.setAttribute('aria-label', label);
+          if (icon) icon.textContent = '⎘';
+        }, 1500);
+        _copyResetTimers.set(btn, timer);
+      },
+      () => toast('Copy failed — clipboard access was denied')
+    );
   }
   function copyFinding(tr, format) {
     const f = rowFinding(tr);
@@ -903,7 +937,7 @@ window.Sentinel = (function () {
     onCheckboxClick, selectAll, clearSelection,
     onRowContextMenu, onMenuButtonClick, closeContextMenu,
     openPalette, closePalette, togglePalette, onPaletteInput,
-    toggleCheatsheet, toast,
+    toggleCheatsheet, toast, copyValue,
     openScheduleModal, closeScheduleModal, deleteScheduleFromModal, runScheduleNowFromModal,
   };
 })();

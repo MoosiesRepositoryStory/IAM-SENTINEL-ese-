@@ -1,5 +1,6 @@
 {# Swappable table region: meta bar + header + rows + pager.
    Rendered standalone for htmx swaps and included by findings.html on full load. #}
+{% from "partials/_macros.html" import copy_button %}
 {% set colset = selected_cols %}
 {% set sev_class = {'CRITICAL': 'r-crit', 'HIGH': 'r-high', 'MEDIUM': 'r-med', 'LOW': 'r-low'} %}
 
@@ -113,7 +114,11 @@
           {% elif col.key == 'title' %}
             <td><div class="title-cell" title="{{ f.title }}">{{ f.title }}</div></td>
           {% elif col.key == 'principal' %}
-            <td class="mono">{{ f.principal_uid or '—' }}</td>
+            <td>
+              {% if f.principal_uid %}
+              <span class="copyable"><span class="mono">{{ f.principal_uid }}</span>{{ copy_button(f.principal_uid, 'principal') }}</span>
+              {% else %}<span class="mono">—</span>{% endif %}
+            </td>
           {% elif col.key == 'category' %}
             <td style="text-transform:capitalize">{{ f.category }}</td>
           {% elif col.key == 'assignee' %}

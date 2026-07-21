@@ -3,13 +3,14 @@
 {% block title %}{{ graph.focus_label }} · Blast Radius · IAM Sentinel{% endblock %}
 {% block crumb %}<a href="{{ url_for('web.graph_overview') }}">Graph</a> <span class="dot-sep">/</span> <b>{{ graph.focus_label }}</b>{% endblock %}
 
+{% from "partials/_macros.html" import copy_button %}
 {% block main %}
 <script src="{{ url_for('static', filename='vendor/cytoscape.min.js') }}"></script>
 
 <div class="page-head">
   <h1>{{ graph.focus_label }}</h1>
 </div>
-<p class="page-sub mono">{{ graph.focus }}</p>
+<p class="page-sub"><span class="copyable"><span class="mono">{{ graph.focus }}</span>{{ copy_button(graph.focus, 'principal ARN') }}</span></p>
 
 <div class="model-disclaimer">
   <span class="ico">ⓘ</span>
